@@ -529,6 +529,9 @@ class HostTile(MechPanel):
         self.bar=QProgressBar()
         self.bar.setTextVisible(False)
         box.addWidget(self.bar)
+        for text in (self.name,self.endpoint,self.summary,self.capacity):
+            text.setMinimumWidth(0)
+            text.setSizePolicy(QSizePolicy.Policy.Ignored,QSizePolicy.Policy.Preferred)
         self.update_data(session)
 
     def update_data(self,session,selected=False):
@@ -555,6 +558,8 @@ class HostTile(MechPanel):
             self.summary.setText('已暂停 · 随时可恢复' if not session.profile['autoconnect'] and not session.desired else session.state+' · 等待遥测')
             self.bar.setValue(0)
             self.bar.setVisible(session.desired)
+        if session.historical:
+            self.summary.setText('历史快照 · '+session.snapshot_time[5:])
         self.setToolTip(session.message)
         counts=session.availability_counts()
         if no_gpu:

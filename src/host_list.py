@@ -27,6 +27,21 @@ class HostList(QListWidget):
         self.setMouseTracking(True)
         self.viewport().setMouseTracking(True)
 
+    def fit_tiles(self):
+        width=max(1,self.viewport().width()-2)
+        for index in range(self.count()):
+            tile=self.itemWidget(self.item(index))
+            if tile and tile.width()!=width:
+                tile.setFixedWidth(width)
+
+    def setItemWidget(self,item,widget):
+        super().setItemWidget(item,widget)
+        self.fit_tiles()
+
+    def resizeEvent(self,event):
+        super().resizeEvent(event)
+        self.fit_tiles()
+
     def stop_scroll(self,*args):
         self.scroll_animation.stop()
         self.scroll_target=self.verticalScrollBar().value()

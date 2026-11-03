@@ -16,3 +16,7 @@ delivery/**
 *.lnk
 .env
 .env.*
+
+snapshots/
+runtime_state.json
+host_catalog.json

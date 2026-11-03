@@ -18,6 +18,7 @@ from dialogs import HostDialog,ConfigDialog
 from visuals import STYLE,Backdrop,GPUCard,HostTile,ModernButton,StatusIndicator,MechPanel,label,fmt
 import profiles
 import vault
+import snapshots
 from process_table import ProcessHeader,ProcessCells,ProcessTable,ALIGNMENTS
 from availability import Rules,Tracker,COLORS,LABELS
 from dialogs import AvailabilityDialog
@@ -297,7 +298,7 @@ class Window(QMainWindow):
     def register(self,p):
         session=self.session_factory(p,self)
         session.availability_tracker=Tracker(self.availability_rules)
-        session.gpu_hint=self.inventory_hints.get(session.id)
+        session.gpu_hint=session.gpu_hint or self.inventory_hints.get(session.id)
         self.sessions[session.id]=session
         session.changed.connect(self.host_changed)
         session.sampled.connect(self.host_sampled)
@@ -420,10 +421,14 @@ class Window(QMainWindow):
         self.heading.setText(p['name'])
         self.heading.setToolTip(p['name'])
         self.connect_button.setText('暂停监控' if session.desired else '恢复监控')
-        self.badge.setText('● '+session.state)
+        self.badge.setText('● '+session.state+(' · 历史快照' if session.historical else ''))
         color='#68f6cf' if session.fresh else '#ffcb84' if session.desired or session.state in ('连接异常','待认证') else '#91a4be'
         self.badge.setTone(color)
-        self.status_text.setText(session.message+(' · 最近采样 '+str(int(time.monotonic()-session.received))+' 秒前' if session.received else ''))
+        snapshot_note=(' · 历史快照 '+session.snapshot_time+'（非实时，GPU／曲线／进程已冻结）' if session.historical else (' · 最近采样 '+str(max(0,int(time.monotonic()-session.received)))+' 秒前' if session.received else ''))
+        self.status_text.setText(session.message+snapshot_note+(' · '+session.cache_error if session.cache_error else ''))
+        if session.snapshot is not None and not session.snapshot['gpus']:
+            lead=('历史快照 · '+session.snapshot_time+'（非实时）\n\n') if session.historical else 'SSH 连接正常\n\n'
+            self.empty.setText(lead+session.snapshot.get('notice','当前主机没有可显示的 GPU'))
         self.telemetry.setText(f'SECURE SHELL  /  {p["interval"]}s INTERVAL  /  后台独立监控')
 
     def render_selected(self):
@@ -445,7 +450,7 @@ class Window(QMainWindow):
         else:
             gs=data['gpus']
             self.empty.setVisible(not gs)
-            self.empty.setText('SSH 连接正常\n\n'+data.get('notice','当前主机没有可显示的 GPU') if not gs else '')
+            self.empty.setText((('历史快照 · '+session.snapshot_time+'（非实时）\n\n') if session.historical else 'SSH 连接正常\n\n')+data.get('notice','当前主机没有可显示的 GPU') if not gs else '')
             ids={g['uuid'] for g in gs}
             for key in list(self.cards):
                 if key not in ids:
@@ -565,10 +570,12 @@ class Window(QMainWindow):
     def write_runtime_state(self):
         try:
             profiles.atomic_json(DATA/'runtime_state.json',{
-                'version':'v13','pid':__import__('os').getpid(),
+                'version':'v14','pid':__import__('os').getpid(),
                 'exe':sys.executable,'app_data':str(DATA),'profile_data':str(profiles.DATA),
                 'loaded_count':len(self.items),'session_count':len(self.sessions),
                 'visible_row_count':self.host_list.count(),'load_error':self.load_error,
+                'historical_snapshots':sum(s.historical for s in self.sessions.values()),
+                'snapshot_gpu_counts':{s.id:len(s.snapshot['gpus']) for s in self.sessions.values() if s.snapshot is not None},
                 'names':[p['name'] for p in self.items],
                 'stamp':self.profile_stamp,
             })
@@ -695,6 +702,7 @@ class Window(QMainWindow):
             return
         if not self.save_items([p for p in self.items if p['id']!=s.id],removed_ids={s.id}):
             return
+        snapshots.remove(s.profile)
         s.stop()
         if s.running:
             self.retired.append(s)
@@ -813,6 +821,7 @@ class Window(QMainWindow):
         super().resizeEvent(event)
         if hasattr(self,'card_scroll'):
             self.size_cards()
+            QTimer.singleShot(0,self.size_cards)
         if hasattr(self,'table'):
             QTimer.singleShot(0,self.layout_process_columns)
         if getattr(self,'resize_handles',None):
@@ -826,7 +835,7 @@ class Window(QMainWindow):
                 control.update()
 
     def help(self):
-        self.notify('GPU Checker v13 使用说明','左侧主机在后台持续采集，点击只切换右侧视图。暂停某台或全部暂停会保存状态，下次启动仍暂停；恢复后重新启用自动连接。正常关闭窗口不会改变暂停设置。\n\n编辑主机可勾选记住服务器密码，存入当前 Windows 用户的凭据管理器。程序启动时可自动取用；暂停不会删除已保存密码。取消勾选并保存可删除凭据。换电脑需重新输入。私钥口令仍仅保留在会话内存。\n\n无 GPU 主机显示在线并继续保活；驱动不可用与无设备分别显示。不提权，不控制用卡进程，不读取环境或完整命令行。\n\nOpenSSH 模式支持系统 config、Agent 和跳板机；内置密码模式仅直连。新主机需核对指纹，已有密钥变化拒绝连接。\n\n远端要求 Linux 与 Python 3.6+；GPU 遥测另需 NVIDIA 驱动和 nvidia-smi。\n\n配置位置：'+str(DATA)+'\n主机条目：'+str(len(self.items))+'；列表：'+str(self.host_list.count())+'\n主机读取位置：'+str(profiles.DATA)+'\nexe 旁放 portable.flag 可启用 data/ 便携模式。密码不进入 JSON、config 或迁移包，私钥请独立保管。')
+        self.notify('GPU Checker v14 使用说明','左侧主机在后台持续采集，点击只切换右侧视图。暂停某台或全部暂停会保存状态，下次启动仍暂停；恢复后重新启用自动连接。正常关闭窗口不会改变暂停设置。\n\n编辑主机可勾选记住服务器密码，存入当前 Windows 用户的凭据管理器。程序启动时可自动取用；暂停不会删除已保存密码。取消勾选并保存可删除凭据。换电脑需重新输入。私钥口令仍仅保留在会话内存。\n\n无 GPU 主机显示在线并继续保活；驱动不可用与无设备分别显示。不提权，不控制用卡进程，不读取环境或完整命令行。\n\nOpenSSH 模式支持系统 config、Agent 和跳板机；内置密码模式仅直连。新主机需核对指纹，已有密钥变化拒绝连接。\n\n远端要求 Linux 与 Python 3.6+；GPU 遥测另需 NVIDIA 驱动和 nvidia-smi。\n\n配置位置：'+str(DATA)+'\n主机条目：'+str(len(self.items))+'；列表：'+str(self.host_list.count())+'\n主机读取位置：'+str(profiles.DATA)+'\nexe 旁放 portable.flag 可启用 data/ 便携模式。密码不进入 JSON、config 或迁移包，私钥请独立保管。')
 
     def closeEvent(self,event):
         self.closing=True

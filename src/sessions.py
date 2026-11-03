@@ -5,6 +5,7 @@ from PySide6.QtCore import QObject, QTimer, Signal
 from backend import Monitor
 import profiles
 import vault
+import snapshots
 from availability import Tracker,result
 
 
@@ -26,6 +27,9 @@ class HostSession(QObject):
         self.history = {}
         self.received = 0
         self.sample_count = 0
+        self.sampled_at=0.
+        self.retained_snapshot=False
+        self.cache_error=''
         self.availability_tracker=Tracker()
         self.gpu_states={}
         self.gpu_hint=None
@@ -35,6 +39,15 @@ class HostSession(QObject):
         self.retry_timer = QTimer(self)
         self.retry_timer.setSingleShot(True)
         self.retry_timer.timeout.connect(self._launch)
+        cached=snapshots.load(self.profile)
+        if cached:
+            self.snapshot=cached['data']
+            self.sampled_at=cached['sampled_at']
+            self.history={key:deque(values,maxlen=60) for key,values in cached['history'].items()}
+            self.gpu_hint=self.snapshot.get('gpu_status','available')
+            self.retained_snapshot=True
+            self.message='已恢复最后一次成功采样；等待连接，当前显示历史快照'
+
 
     @property
     def running(self):
@@ -44,6 +57,14 @@ class HostSession(QObject):
     def fresh(self):
         return (self.state in ('在线','在线 · 无 GPU','在线 · GPU 不可用') and self.received > 0 and
                 time.monotonic() - self.received < max(10, self.profile["interval"]*2+5))
+
+    @property
+    def historical(self):
+        return self.snapshot is not None and (not self.fresh or self.retained_snapshot)
+
+    @property
+    def snapshot_time(self):
+        return time.strftime('%Y-%m-%d %H:%M:%S',time.localtime(self.sampled_at)) if self.sampled_at else '时间未知'
 
     def start(self, password="", passphrase=""):
         if self.desired:
@@ -105,7 +126,22 @@ class HostSession(QObject):
             self.state, self.message = "采样异常", str(data["error"])
             self.changed.emit(self.id)
             return
+        capability=data.get('gpu_status','available')
+        if capability=='unavailable' and self.snapshot is not None:
+            self.retained_snapshot=True
+            self.received=time.monotonic()
+            self.sample_count+=1
+            self.gpu_hint=capability
+            self.gpu_states={}
+            self.availability_tracker.reset()
+            self.state='在线 · GPU 不可用'
+            self.message=data.get('notice','GPU 查询不可用；保留最后一次成功采样')
+            self.changed.emit(self.id)
+            self.sampled.emit(self.id)
+            return
         self.snapshot = data
+        self.retained_snapshot=False
+        self.sampled_at=time.time()
         self.received = time.monotonic()
         self.sample_count += 1
         self.retry_count = 0
@@ -117,6 +153,12 @@ class HostSession(QObject):
         for gpu in data["gpus"]:
             values = self.history.setdefault(gpu["uuid"], deque(maxlen=60))
             values.append(gpu.get("util"))
+        if capability in ('available','no_gpu'):
+            try:
+                snapshots.save(self.profile,self.snapshot,self.history,self.sampled_at)
+                self.cache_error=''
+            except Exception:
+                self.cache_error='本次快照未保存到磁盘，仍显示实时数据'
         self.changed.emit(self.id)
         self.sampled.emit(self.id)
 
@@ -172,7 +214,7 @@ class HostSession(QObject):
             self.changed.emit(self.id)
 
     def gpu_availability(self,uuid):
-        if not self.fresh:
+        if not self.fresh or self.retained_snapshot:
             state=result('unknown','监控暂停、连接异常或数据过期，不沿用历史可用判断')
             state['visual']='paused' if self.state in ('已暂停','已停止') else 'disconnected'
             state['label']='已暂停' if state['visual']=='paused' else '连接中断'
@@ -180,7 +222,7 @@ class HostSession(QObject):
         return self.gpu_states.get(uuid,result('unknown','尚无完整采样'))
 
     def availability_counts(self):
-        if not self.fresh or not self.snapshot or self.gpu_hint=='unavailable':
+        if not self.fresh or self.retained_snapshot or not self.snapshot or self.gpu_hint=='unavailable':
             return None
         states=[self.gpu_availability(g['uuid']) for g in self.snapshot['gpus']]
         return {'idle':sum(s['idle'] for s in states),'available':sum(s['available'] for s in states),
