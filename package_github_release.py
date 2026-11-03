@@ -5,9 +5,10 @@ from pathlib import Path
 import shutil
 import subprocess
 import zipfile
+import runpy
 
 ROOT=Path(__file__).resolve().parent
-VERSION='14.0.1'
+VERSION=runpy.run_path(str(ROOT/'src/version.py'))['APP_VERSION']
 OUT=ROOT/'delivery/releases'/('v'+VERSION)
 
 
@@ -25,7 +26,7 @@ def main():
     runtime=OUT/f'GPUChecker-v{VERSION}-Windows-x64.zip'
     with zipfile.ZipFile(runtime,'w',zipfile.ZIP_DEFLATED) as archive:
         archive.write(executable,'GPUChecker/GPUChecker.exe')
-        archive.write(ROOT/'RELEASE_GUIDE.md','GPUChecker/使用说明.md')
+        archive.write(ROOT/'docs/USAGE.md','GPUChecker/使用说明.md')
         archive.write(ROOT/'delivery/portable.flag.example','GPUChecker/portable.flag.example')
         archive.write(ROOT/'delivery/THIRD_PARTY_NOTICES.md','GPUChecker/THIRD_PARTY_NOTICES.md')
         for path in sorted((ROOT/'delivery/licenses').rglob('*')):
@@ -34,11 +35,7 @@ def main():
     names=subprocess.check_output(['git','ls-files','-z'],cwd=ROOT).decode().split('\0')
     with zipfile.ZipFile(source,'w',zipfile.ZIP_DEFLATED) as archive:
         for name in sorted(filter(None,names)):
-            if name=='delivery/VALIDATION.md':
-                archive.write(ROOT/'RELEASE_VALIDATION.md',name)
-            elif name.startswith('tests/live_'):
-                continue  # Explicit developer-server scripts are not release fixtures.
-            else:
+            if (ROOT/name).is_file():
                 archive.write(ROOT/name,name)
     checksums=[]
     for path in (executable,runtime,source):

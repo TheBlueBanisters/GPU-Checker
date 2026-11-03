@@ -60,6 +60,27 @@ def test_endpoint_change_and_corrupt_cache_do_not_load_wrong_host(window):
     fresh.stop()
 
 
+def test_pause_keeps_last_status_color_across_restart_without_advertising_capacity(window):
+    s=sample(window)
+    before=dict(s.gpu_availability('GPU-1'))
+    s.pause();window.persist_session_preferences()
+    card=window.cards['GPU-1']
+    assert card.state_label.text()==before['label']
+    assert card.state_label.tone.name()==before['color']
+    assert card.state_label.diamond_size==12
+    assert s.availability_counts() is None and not s.gpu_availability('GPU-1')['available']
+    fresh=type(window)(autostart=False,session_factory=window.session_factory)
+    try:
+        restored=fresh.selected
+        badge=fresh.cards['GPU-1'].state_label
+        assert restored.state=='已暂停' and restored.historical
+        assert badge.text()==before['label'] and badge.tone.name()==before['color']
+        assert restored.availability_counts() is None
+        assert not restored.gpu_availability('GPU-1')['available']
+    finally:
+        fresh.close()
+
+
 def test_cache_write_failure_does_not_stop_live_monitor(window,monkeypatch):
     s=sample(window);worker=s.worker
     good=snapshots.path_for(s.profile).read_bytes()

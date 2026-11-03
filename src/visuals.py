@@ -447,7 +447,8 @@ class GPUCard(MechPanel):
         box.setContentsMargins(17,12,17,12)
         box.setSpacing(5)
         self.title=label("","eyebrow")
-        self.state_label=label('未知')
+        self.state_label=StatusIndicator('未知',diamond_size=12)
+        set_style(self.state_label,'font-size:16px;font-weight:600')
         title_row=QHBoxLayout()
         title_row.setContentsMargins(0,0,0,0)
         title_row.addWidget(self.title,1)
@@ -490,8 +491,8 @@ class GPUCard(MechPanel):
         self.motion.set_state(visual)
         color='#78909f' if visual in ('blocked','disconnected','paused') else state['color']
         self.setProperty('availabilityColor',color)
+        self.state_label.setTone(state['color'] if state.get('historical') else color)
         self.state_label.setText(state['label'])
-        set_style(self.state_label,f'font-size:13px;color:{color}')
         self.state_label.setToolTip(state['reason'])
         set_style(self.metric_label,f'color:{color}')
         set_style(self.bar,f'QProgressBar::chunk {{background:{color};border-radius:0;}}')
@@ -574,8 +575,9 @@ class HostTile(MechPanel):
 
 
 class StatusIndicator(QWidget):
-    def __init__(self,text='尚未连接'):
+    def __init__(self,text='尚未连接',diamond_size=8):
         super().__init__()
+        self.diamond_size=diamond_size
         self.value=text
         self.tone=QColor('#78a2b4')
         self.setFixedHeight(26)
@@ -583,7 +585,8 @@ class StatusIndicator(QWidget):
 
     def setText(self,text):
         self.value=text.removeprefix('● ')
-        self.setFixedWidth(self.fontMetrics().horizontalAdvance(self.value)+25)
+        self.ensurePolished()
+        self.setFixedWidth(self.fontMetrics().horizontalAdvance(self.value)+self.diamond_size+17)
         self.update()
 
     def text(self):
@@ -599,8 +602,11 @@ class StatusIndicator(QWidget):
         p.setPen(Qt.PenStyle.NoPen)
         p.setBrush(themed(self.tone))
         path=QPainterPath()
-        path.moveTo(1,self.height()/2);path.lineTo(5,self.height()/2-4);path.lineTo(9,self.height()/2);path.lineTo(5,self.height()/2+4);path.closeSubpath()
+        radius=self.diamond_size/2
+        centre=1+radius
+        path.moveTo(1,self.height()/2);path.lineTo(centre,self.height()/2-radius);path.lineTo(1+self.diamond_size,self.height()/2);path.lineTo(centre,self.height()/2+radius);path.closeSubpath()
         p.drawPath(path)
         p.setPen(themed(self.tone))
         p.setFont(self.font())
-        p.drawText(QRectF(17,0,self.width()-17,self.height()),Qt.AlignmentFlag.AlignVCenter,self.value)
+        left=self.diamond_size+9
+        p.drawText(QRectF(left,0,self.width()-left,self.height()),Qt.AlignmentFlag.AlignVCenter,self.value)

@@ -12,4 +12,5 @@ if ($LASTEXITCODE -ne 0) { throw 'Tests failed.' }
 if ($LASTEXITCODE -ne 0) { throw 'Build failed.' }
 & .\.buildenv\Scripts\python.exe package_github_release.py --exe build/release-runtime/GPUChecker.exe
 if ($LASTEXITCODE -ne 0) { throw 'Release packaging failed.' }
-Get-FileHash -LiteralPath delivery\releases\v14.0.1\GPUChecker.exe -Algorithm SHA256
+$releaseVersion = & .\.buildenv\Scripts\python.exe -c "import runpy; print(runpy.run_path('src/version.py')['APP_VERSION'])"
+Get-FileHash -LiteralPath "delivery\releases\v$releaseVersion\GPUChecker.exe" -Algorithm SHA256

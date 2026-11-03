@@ -3,6 +3,7 @@ import themes
 import storage
 from version import APP_VERSION
 from host_list import HostList
+from telemetry_transition import TelemetryTransition
 import json
 from pathlib import Path
 import sys
@@ -39,6 +40,7 @@ class NoHoverPopups(QObject):
 
 class Window(QMainWindow):
     def toggle_theme(self):
+        if hasattr(self,'telemetry_transition'): self.telemetry_transition.cancel()
         mode='night' if themes.is_day() else 'day'
         themes.apply(QApplication.instance(),mode,STYLE)
         DATA.mkdir(parents=True,exist_ok=True)
@@ -273,6 +275,10 @@ class Window(QMainWindow):
         self.status_text.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         content.addWidget(self.status_text)
         root.addLayout(content,1)
+        regions=[(value.parentWidget(),500) for value in self.stats]
+        regions.extend([(self.card_scroll.viewport(),900),(self.table.viewport(),350),(self.details.viewport(),350)])
+        self.telemetry_transition=TelemetryTransition(self,regions)
+        self.search.textChanged.connect(self.telemetry_transition.cancel)
         for profile in self.items:
             self.register(profile)
         self.rebuild_list()
@@ -413,6 +419,11 @@ class Window(QMainWindow):
 
     def render_status(self):
         session=self.selected
+        mode=self.telemetry_transition.observe(session)
+        for value in self.stats:
+            if value.property('telemetryMode')!=mode:
+                value.setProperty('telemetryMode',mode)
+                set_style(value,'color:'+{'empty':'#5d7890','frozen':'#859faf','live':'#8fc8de'}[mode])
         for widget in (self.connect_button,self.edit_button,self.remove_button):
             widget.setEnabled(session is not None)
         if not session:
@@ -834,6 +845,8 @@ class Window(QMainWindow):
 
     def changeEvent(self,event):
         super().changeEvent(event)
+        if event.type()==QEvent.Type.WindowStateChange and self.isMinimized() and hasattr(self,'telemetry_transition'):
+            self.telemetry_transition.cancel()
         if event.type()==QEvent.Type.WindowStateChange and getattr(self,'resize_handles',None):
             layout_handles(self)
             for control in self.title_bar.findChildren(QWidget):
@@ -844,6 +857,7 @@ class Window(QMainWindow):
 
     def closeEvent(self,event):
         self.closing=True
+        if hasattr(self,'telemetry_transition'): self.telemetry_transition.cancel()
         all_sessions=list(self.sessions.values())+self.retired
         running=any(s.running for s in all_sessions)
         for s in all_sessions:

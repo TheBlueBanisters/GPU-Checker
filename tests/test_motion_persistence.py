@@ -70,10 +70,12 @@ def test_disconnect_fractures_and_pause_stays_quiet(window):
     w=window;w.show();w.connect_all()
     s=w.selected;s.worker.data.emit(snapshot(1));QApplication.processEvents()
     card=next(iter(w.cards.values()))
+    previous=card.state_label.text()
     s.state='连接异常';s.received=time.monotonic()-100
     s.changed.emit(s.id)
     assert card.motion.state=='disconnected'
     assert card.state_label.text()=='连接中断'
     s.pause()
     assert card.motion.state=='paused' and not card.motion.timer.isActive()
-    assert card.state_label.text()=='已暂停'
+    assert card.state_label.text()==previous
+    assert s.availability_counts() is None

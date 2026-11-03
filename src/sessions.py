@@ -32,6 +32,7 @@ class HostSession(QObject):
         self.cache_error=''
         self.availability_tracker=Tracker()
         self.gpu_states={}
+        self.last_gpu_states={}
         self.gpu_hint=None
         self.state = '未连接' if self.profile['autoconnect'] else '已暂停'
         self.message = '点击连接开始监控' if self.profile['autoconnect'] else '已记住暂停状态，不会自动连接'
@@ -46,6 +47,7 @@ class HostSession(QObject):
             self.history={key:deque(values,maxlen=60) for key,values in cached['history'].items()}
             self.gpu_hint=self.snapshot.get('gpu_status','available')
             self.retained_snapshot=True
+            self.last_gpu_states={key:result(value,'上次成功采样状态') for key,value in cached['states'].items()}
             self.message='已恢复最后一次成功采样；等待连接，当前显示历史快照'
 
 
@@ -148,6 +150,7 @@ class HostSession(QObject):
         capability=data.get('gpu_status','available')
         self.gpu_hint=capability
         self.gpu_states=self.availability_tracker.observe(data,self.received,self.profile['interval'])
+        self.last_gpu_states={key:dict(value) for key,value in self.gpu_states.items()}
         self.state = '在线 · 无 GPU' if capability=='no_gpu' else '在线 · GPU 不可用' if capability=='unavailable' else '在线'
         self.message=data.get('notice') or '只读实时采样正常'
         for gpu in data["gpus"]:
@@ -155,7 +158,7 @@ class HostSession(QObject):
             values.append(gpu.get("util"))
         if capability in ('available','no_gpu'):
             try:
-                snapshots.save(self.profile,self.snapshot,self.history,self.sampled_at)
+                snapshots.save(self.profile,self.snapshot,self.history,self.sampled_at,self.last_gpu_states)
                 self.cache_error=''
             except Exception:
                 self.cache_error='本次快照未保存到磁盘，仍显示实时数据'
@@ -218,6 +221,12 @@ class HostSession(QObject):
             state=result('unknown','监控暂停、连接异常或数据过期，不沿用历史可用判断')
             state['visual']='paused' if self.state in ('已暂停','已停止') else 'disconnected'
             state['label']='已暂停' if state['visual']=='paused' else '连接中断'
+            if state['visual']=='paused':
+                previous=self.last_gpu_states.get(uuid)
+                state['label']=previous['label'] if previous else '未知'
+                if previous: state['color']=previous['color']
+                state['historical']=True
+                state['reason']='暂停前的最后采样状态（非实时，不计入当前可用数量）'
             return state
         return self.gpu_states.get(uuid,result('unknown','尚无完整采样'))
 

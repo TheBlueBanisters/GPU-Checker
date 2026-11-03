@@ -4,6 +4,7 @@ import json
 import math
 import profiles
 import vault
+from availability import COLORS
 
 GPU_FIELDS=set('index uuid name util used total free temp power fan state compute_mode mig_mode recovery_action slowdown_temp remap_failure minor_number process_query_ok ecc_uncorrectable device_access'.split())
 PROCESS_FIELDS=set('gpu uuid pid user uid kind memory name cwd exe start ppid instance'.split())
@@ -57,10 +58,12 @@ def clean_data(data):
     return result
 
 
-def save(profile,data,history,sampled_at):
+def save(profile,data,history,sampled_at,states=None):
     data=clean_data(data)
     record={'version':1,'endpoint':endpoint(profile),'sampled_at':sampled_at,'data':data,
-            'history':{g['uuid']:list(history.get(g['uuid'],()))[-60:] for g in data['gpus']}}
+            'history':{g['uuid']:list(history.get(g['uuid'],()))[-60:] for g in data['gpus']},
+            'states':{g['uuid']:states[g['uuid']]['status'] for g in data['gpus']
+                      if states and g['uuid'] in states and states[g['uuid']].get('status') in COLORS}}
     if len(json.dumps(record,ensure_ascii=False,allow_nan=False).encode())>MAX_BYTES:
         raise ValueError('Snapshot exceeds local cache size limit')
     profiles.atomic_json(path_for(profile),record)
@@ -81,7 +84,10 @@ def load(profile):
             if not isinstance(values,list): return None
             if any(v is not None and (isinstance(v,bool) or not isinstance(v,(int,float)) or not math.isfinite(v)) for v in values): return None
             history[g['uuid']]=values[-60:]
-        return {'data':data,'history':history,'sampled_at':stamp}
+        saved=record.get('states',{})
+        states={g['uuid']:saved[g['uuid']] for g in data['gpus']
+                if isinstance(saved,dict) and isinstance(saved.get(g['uuid']),str) and saved[g['uuid']] in COLORS}
+        return {'data':data,'history':history,'sampled_at':stamp,'states':states}
     except Exception:
         return None
 

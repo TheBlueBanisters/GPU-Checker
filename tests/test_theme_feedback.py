@@ -64,6 +64,7 @@ def test_theme_updates_existing_and_new_widgets_and_persists(window):
 def test_grid_visible_on_hover_in_both_themes(window):
     w=window;w.show();w.connect_all()
     w.selected.worker.data.emit(snapshot(1));QApplication.processEvents()
+    QTest.qWait(700)  # Assert steady-state grid contrast after the entry fade.
     table=w.table
     for mode in ('night','day'):
         themes.apply(QApplication.instance(),mode,STYLE)
