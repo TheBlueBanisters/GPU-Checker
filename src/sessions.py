@@ -173,7 +173,10 @@ class HostSession(QObject):
 
     def gpu_availability(self,uuid):
         if not self.fresh:
-            return result('unknown','监控暂停、连接异常或数据过期，不沿用历史可用判断')
+            state=result('unknown','监控暂停、连接异常或数据过期，不沿用历史可用判断')
+            state['visual']='paused' if self.state in ('已暂停','已停止') else 'disconnected'
+            state['label']='已暂停' if state['visual']=='paused' else '连接中断'
+            return state
         return self.gpu_states.get(uuid,result('unknown','尚无完整采样'))
 
     def availability_counts(self):

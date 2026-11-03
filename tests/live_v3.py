@@ -11,6 +11,9 @@ from dialogs import HostDialog,ConfigDialog
 
 application=QApplication([])
 ui.configure_app(application)
+import themes
+from visuals import STYLE
+themes.apply(application,"night",STYLE)
 items=profiles.load()
 for item in items:
     item['autoconnect']=True  # Test copy only; preserve the user's saved pause choices.

@@ -1,4 +1,6 @@
 from themes import set_style, color as themed, is_day
+import math
+from card_motion import CardMotion
 from pathlib import Path
 from PySide6.QtCore import Qt,QRectF,QPointF,QVariantAnimation,QSize,QEvent,QEasingCurve
 from PySide6.QtGui import QColor, QPainter, QPainterPath, QPen, QLinearGradient, QRadialGradient,QFont
@@ -69,14 +71,14 @@ class MechPanel(QFrame):
         self.feedback_point=QPointF(30,30)
         self.click_origin=QPointF(30,30)
         self.hover_animation=QVariantAnimation(self)
-        self.hover_animation.setDuration(160)
+        self.hover_animation.setDuration(240)
         self.hover_animation.setEasingCurve(QEasingCurve.Type.OutCubic)
         self.hover_animation.valueChanged.connect(self._hover_frame)
         self.click_animation=QVariantAnimation(self)
-        self.click_animation.setDuration(620)
+        self.click_animation.setDuration(2400)
         self.click_animation.setStartValue(0.)
         self.click_animation.setEndValue(1.)
-        self.click_animation.setEasingCurve(QEasingCurve.Type.OutCubic)
+        self.click_animation.setEasingCurve(QEasingCurve.Type.Linear)
         self.click_animation.valueChanged.connect(self._click_frame)
 
     def enable_feedback(self):
@@ -157,6 +159,12 @@ class MechPanel(QFrame):
         self.click_progress=1.
         super().hideEvent(event)
 
+    def panel_path(self,rect):
+        return notch_path(rect,10)
+
+    def paint_background(self,p,rect):
+        pass
+
     def paintEvent(self,event):
         p=QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
@@ -181,6 +189,7 @@ class MechPanel(QFrame):
             edge.setAlpha(165)
         p.setPen(QPen(edge,1))
         p.drawPath(notch_path(rect,10))
+        self.paint_background(p,rect)
         accent=themed(state_color or ('#64e5d8' if selected else '#3e98ac' if role=='card' else '#315e76'))
         p.setPen(QPen(accent,2))
         p.drawLine(QPointF(1,1),QPointF(min(47,self.width()/3),1))
@@ -202,21 +211,24 @@ class MechPanel(QFrame):
                 p.drawLine(QPointF(1,1),QPointF(min(72,self.width()/2),1))
             if self.click_progress<1:
                 t=self.click_progress
-                radius=max(2,(self.width()**2+self.height()**2)**.5*t)
+                # Smooth ease-in/out expansion and soft annuli, no sweeping scan bar.
+                travel=t*t*(3-2*t)
+                reach=max(math.hypot(x-self.click_origin.x(),y-self.click_origin.y())
+                          for x,y in ((0,0),(self.width(),0),(0,self.height()),(self.width(),self.height())))
+                radius=max(2,reach*travel)
+                fade=math.sin(math.pi*t)**1.5
                 glow=QRadialGradient(self.click_origin,radius)
-                glow.setColorAt(0,themed(70,240,215,int(42*(1-t))))
-                glow.setColorAt(.8,themed(70,220,230,int(27*(1-t))))
-                glow.setColorAt(1,themed(70,220,230,0))
+                for stop,alpha in ((0,0),(.55,0),(.72,7),(.84,22),(.94,9),(1,0)):
+                    ink=themed('#75e6e1');ink.setAlpha(round(alpha*fade))
+                    glow.setColorAt(stop,ink)
                 p.fillPath(outline,glow)
-                p.setBrush(Qt.BrushStyle.NoBrush)
-                p.setPen(QPen(themed(115,255,230,int(155*(1-t))),1.8))
-                p.drawEllipse(self.click_origin,radius,radius)
-                scan_x=(self.width()+50)*t-25
-                scan=QLinearGradient(scan_x-22,0,scan_x+22,0)
-                scan.setColorAt(0,themed(83,239,224,0))
-                scan.setColorAt(.5,themed(83,239,224,int(56*(1-t))))
-                scan.setColorAt(1,themed(83,239,224,0))
-                p.fillRect(QRectF(scan_x-22,0,44,self.height()),scan)
+                if t>.16:
+                    echo=QRadialGradient(self.click_origin,max(2,radius*.64))
+                    for stop,alpha in ((0,0),(.7,0),(.86,10),(1,0)):
+                        ink=themed('#75e6e1');ink.setAlpha(round(alpha*fade))
+                        echo.setColorAt(stop,ink)
+                    p.fillPath(outline,echo)
+
 
 
 class ModernButton(QPushButton):
@@ -396,9 +408,26 @@ class Sparkline(QWidget):
 
 
 class GPUCard(MechPanel):
+    def paint_background(self,p,rect):
+        self.motion.paint(p,rect)
+
+    def showEvent(self,event):
+        super().showEvent(event)
+        self.motion.sync()
+
+    def hideEvent(self,event):
+        self.motion.timer.stop()
+        super().hideEvent(event)
+
+    def eventFilter(self,watched,event):
+        if hasattr(self,'motion') and event.type() in (QEvent.Type.WindowStateChange,QEvent.Type.Show):
+            self.motion.sync()
+        return super().eventFilter(watched,event)
+
     def __init__(self,gpu,history=(),availability=None):
         super().__init__()
         self.setObjectName("card")
+        self.motion=CardMotion(self)
         box=QVBoxLayout(self)
         box.setContentsMargins(17,12,17,12)
         box.setSpacing(5)
@@ -442,7 +471,9 @@ class GPUCard(MechPanel):
         self.set_availability(availability or availability_result('unknown','等待完整的可用性判断'))
 
     def set_availability(self,state):
-        color=state['color']
+        visual=state.get('visual',state['status'])
+        self.motion.set_state(visual)
+        color='#78909f' if visual in ('blocked','disconnected','paused') else state['color']
         self.setProperty('availabilityColor',color)
         self.state_label.setText(state['label'])
         set_style(self.state_label,f'font-size:13px;color:{color}')

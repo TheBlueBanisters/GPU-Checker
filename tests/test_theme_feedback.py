@@ -18,7 +18,7 @@ def test_host_hover_dwell_preserves_selection_and_workers(window):
     listing.setCurrentRow(0)
     point=listing.visualItemRect(listing.item(1)).center()
     QTest.mouseMove(listing.viewport(),point)
-    QTest.qWait(1100)
+    QTest.qWait(1650)
     tile=listing.itemWidget(listing.item(1))
     assert tile.hover_amount>.9 and tile.click_progress<1
     assert listing.currentRow()==0
@@ -27,7 +27,7 @@ def test_host_hover_dwell_preserves_selection_and_workers(window):
     assert [s.worker for s in w.sessions.values()]==workers
     assert all(worker.stops==0 for worker in workers)
     QApplication.sendEvent(listing.viewport(),QEvent(QEvent.Type.Leave))
-    QTest.qWait(200)
+    QTest.qWait(300)
     assert not listing.wave_timer.isActive() and tile.hover_amount==0
 
 

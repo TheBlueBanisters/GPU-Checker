@@ -30,7 +30,7 @@ class HostList(QListWidget):
             tile=self.itemWidget(self.hovered_item)
             if tile:
                 tile.pulse_at(self.hover_point)
-                self.wave_timer.start(1800)
+                self.wave_timer.start(4200)
 
     def mouseMoveEvent(self,event):
         item=self.itemAt(event.position().toPoint())
@@ -38,7 +38,7 @@ class HostList(QListWidget):
             self.reset_hover()
             self.hovered_item=item
             if item:
-                self.wave_timer.start(1000)
+                self.wave_timer.start(1400)
         if item:
             tile=self.itemWidget(item)
             if tile:

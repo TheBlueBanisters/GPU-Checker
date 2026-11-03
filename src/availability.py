@@ -2,7 +2,7 @@
 from dataclasses import dataclass,asdict
 import math
 
-COLORS={'idle':'#63dec1','available':'#65bde9','busy':'#d9a86c','blocked':'#d77f8c',
+COLORS={'idle':'#63dec1','available':'#65bde9','busy':'#d9a86c','blocked':'#78909f',
         'unknown':'#78909f','observing':'#859faf'}
 LABELS={'idle':'空闲','available':'可用','busy':'占用','blocked':'不可用','unknown':'未知','observing':'观察中'}
 

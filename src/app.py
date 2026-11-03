@@ -76,6 +76,8 @@ class Window(QMainWindow):
             profiles.save(self.items)
         except Exception as exc:
             self.load_error=f'读取或保存配置失败：{exc}'
+        self.profile_stamp=self.profiles_stamp()
+        self.automatic_start=autostart
         central=Backdrop()
         shell=QWidget()
         shell.setObjectName('shell')
@@ -193,7 +195,7 @@ class Window(QMainWindow):
             entry=label('◆ '+LABELS[state])
             set_style(entry,f'font-size:13px;color:{COLORS[state]}')
             legend.addWidget(entry)
-        self.availability_legend.setToolTip('绿：空闲；蓝：可用；琥珀：占用；红：不可用；灰：未知／观察中。可用包含空闲。')
+        self.availability_legend.setToolTip('绿：空闲；蓝：可用；琥珀：占用；灰：不可用／断连／未知，按文字区分。可用包含空闲。')
         row.addWidget(self.availability_legend)
         row.addWidget(self.button('判定规则',self.edit_availability_rules))
         content.addLayout(row)
@@ -548,9 +550,63 @@ class Window(QMainWindow):
             self.persist_session_preferences()
             s.start()
 
+    def profiles_stamp(self):
+        try:
+            stat=(profiles.DATA/'profiles.json').stat()
+            return (stat.st_mtime_ns,stat.st_size)
+        except OSError:
+            return None
+
+    def reload_profiles(self):
+        if self.closing or self.profiles_stamp()==self.profile_stamp:
+            return
+        try:
+            incoming=profiles.load()
+            if len({p['id'] for p in incoming})!=len(incoming):
+                return
+        except (OSError,ValueError,TypeError):
+            return  # An incomplete external write never removes the visible fleet.
+        new_ids={p['id'] for p in incoming}
+        for sid in list(self.sessions):
+            if sid not in new_ids:
+                old=self.sessions.pop(sid)
+                old.stop()
+                if old.running: self.retired.append(old)
+                else: old.deleteLater()
+        for p in incoming:
+            old=self.sessions.get(p['id'])
+            if old and old.profile==p:
+                continue
+            connection_changed=old and any(old.profile.get(k)!=p.get(k) for k in ('host','user','port','key','mode','interval'))
+            if connection_changed:
+                old.stop()
+                if old.running: self.retired.append(old)
+                else: old.deleteLater()
+                old=None
+            if old:
+                desired_changed=old.profile['autoconnect']!=p['autoconnect']
+                old.profile=p
+                if desired_changed:
+                    old.start() if p['autoconnect'] else old.pause()
+            else:
+                old=self.register(p)
+                if p['autoconnect'] and self.automatic_start: old.start()
+        self.items=incoming
+        self.profile_stamp=self.profiles_stamp()
+        self.rebuild_list()
+
     def save_items(self,items):
         try:
+            # A stale window must preserve hosts added by another running version.
+            known=set(self.sessions)
+            supplied={p['id'] for p in items}
+            added=[p for p in profiles.load() if p['id'] not in known and p['id'] not in supplied]
+            items=items+added
             profiles.save(items)
+            for p in added:
+                session=self.register(p)
+                if p['autoconnect'] and self.automatic_start: session.start()
+            self.profile_stamp=self.profiles_stamp()
             self.items=items
             return True
         except Exception as exc:
@@ -709,6 +765,7 @@ class Window(QMainWindow):
         self.fleet.setText(f'{active} 台在线 / {len(self.sessions)} 台主机')
 
     def tick(self):
+        self.reload_profiles()
         self.clock.setText(time.strftime('%H:%M:%S')+'  LOCAL')
         for s in self.sessions.values():
             s.refresh_age()
@@ -738,7 +795,7 @@ class Window(QMainWindow):
                 control.update()
 
     def help(self):
-        self.notify('GPU Checker v8 使用说明','左侧主机在后台持续采集，点击只切换右侧视图。暂停某台或全部暂停会保存状态，下次启动仍暂停；恢复后重新启用自动连接。正常关闭窗口不会改变暂停设置。\n\n编辑主机可勾选记住服务器密码，存入当前 Windows 用户的凭据管理器。程序启动时可自动取用；暂停不会删除已保存密码。取消勾选并保存可删除凭据。换电脑需重新输入。私钥口令仍仅保留在会话内存。\n\n无 GPU 主机显示在线并继续保活；驱动不可用与无设备分别显示。不提权，不控制用卡进程，不读取环境或完整命令行。\n\nOpenSSH 模式支持系统 config、Agent 和跳板机；内置密码模式仅直连。新主机需核对指纹，已有密钥变化拒绝连接。\n\n远端要求 Linux 与 Python 3.6+；GPU 遥测另需 NVIDIA 驱动和 nvidia-smi。\n\n配置位置：'+str(DATA)+'\nexe 旁放 portable.flag 可启用 data/ 便携模式。密码不进入 JSON、config 或迁移包，私钥请独立保管。')
+        self.notify('GPU Checker v9 使用说明','左侧主机在后台持续采集，点击只切换右侧视图。暂停某台或全部暂停会保存状态，下次启动仍暂停；恢复后重新启用自动连接。正常关闭窗口不会改变暂停设置。\n\n编辑主机可勾选记住服务器密码，存入当前 Windows 用户的凭据管理器。程序启动时可自动取用；暂停不会删除已保存密码。取消勾选并保存可删除凭据。换电脑需重新输入。私钥口令仍仅保留在会话内存。\n\n无 GPU 主机显示在线并继续保活；驱动不可用与无设备分别显示。不提权，不控制用卡进程，不读取环境或完整命令行。\n\nOpenSSH 模式支持系统 config、Agent 和跳板机；内置密码模式仅直连。新主机需核对指纹，已有密钥变化拒绝连接。\n\n远端要求 Linux 与 Python 3.6+；GPU 遥测另需 NVIDIA 驱动和 nvidia-smi。\n\n配置位置：'+str(DATA)+'\nexe 旁放 portable.flag 可启用 data/ 便携模式。密码不进入 JSON、config 或迁移包，私钥请独立保管。')
 
     def closeEvent(self,event):
         self.closing=True

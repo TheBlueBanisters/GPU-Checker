@@ -12,7 +12,7 @@ MANUAL = '\u4f7f\u7528\u8bf4\u660e.md'
 
 def main():
     shutil.copy2(BASE / "README.md", OUT / MANUAL)
-    source = OUT / "GPUChecker-v8-source.zip"
+    source = OUT / "GPUChecker-v9-source.zip"
     with zipfile.ZipFile(source, "w", zipfile.ZIP_DEFLATED) as archive:
         for folder in ("src", "tests", "assets"):
             for path in (BASE / folder).rglob("*"):
@@ -25,17 +25,17 @@ def main():
         for path in (OUT / "licenses").rglob("*"):
             if path.is_file():
                 archive.write(path, path.relative_to(BASE))
-    bundle = OUT / "GPUChecker-v8-Windows-x64.zip"
+    bundle = OUT / "GPUChecker-v9-Windows-x64.zip"
     with zipfile.ZipFile(bundle, "w", zipfile.ZIP_DEFLATED) as archive:
-        for name in ("GPUChecker-v8.exe", MANUAL, "GPUChecker-v8-source.zip", "portable.flag.example", "THIRD_PARTY_NOTICES.md", "VALIDATION.md", "preview.png", "preview-day.png", "host-editor-day.png", "config-editor.png", "host-editor.png", "preview-nogpu.png", "feedback-preview.gif"):
+        for name in ("GPUChecker-v9.exe", MANUAL, "GPUChecker-v9-source.zip", "portable.flag.example", "THIRD_PARTY_NOTICES.md", "VALIDATION.md", "preview.png", "preview-day.png", "host-editor-day.png", "config-editor.png", "host-editor.png", "preview-nogpu.png", "feedback-preview.gif", "motion-preview.gif"):
             if (OUT/name).exists():
                 archive.write(OUT / name, "GPUChecker/" + name)
         for path in (OUT / "licenses").rglob("*"):
             if path.is_file():
                 archive.write(path, "GPUChecker/" + str(path.relative_to(OUT)))
     manifest = {p.name: {"bytes": p.stat().st_size, "sha256": hashlib.sha256(p.read_bytes()).hexdigest()}
-                for p in (OUT / "GPUChecker-v8.exe", source, bundle)}
-    (OUT / "SHA256-v8.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+                for p in (OUT / "GPUChecker-v9.exe", source, bundle)}
+    (OUT / "SHA256-v9.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
     print(json.dumps(manifest, indent=2))
 
 
