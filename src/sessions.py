@@ -1,0 +1,160 @@
+"""Independent host sessions. Selecting a view never touches a transport."""
+from collections import deque
+import time
+from PySide6.QtCore import QObject, QTimer, Signal
+from backend import Monitor
+import profiles
+import vault
+
+
+class HostSession(QObject):
+    changed = Signal(str)
+    sampled = Signal(str)
+    trust = Signal(str, str, str)
+    stopped = Signal(str)
+
+    def __init__(self, profile, parent=None, factory=Monitor):
+        super().__init__(parent)
+        self.profile = profiles.clean(profile)
+        self.id = self.profile["id"]
+        self.factory = factory
+        self.worker = None
+        self.desired = False
+        self.password = self.passphrase = ""
+        self.snapshot = None
+        self.history = {}
+        self.received = 0
+        self.sample_count = 0
+        self.state = '未连接' if self.profile['autoconnect'] else '已暂停'
+        self.message = '点击连接开始监控' if self.profile['autoconnect'] else '已记住暂停状态，不会自动连接'
+        self.retry_count = 0
+        self.retry_timer = QTimer(self)
+        self.retry_timer.setSingleShot(True)
+        self.retry_timer.timeout.connect(self._launch)
+
+    @property
+    def running(self):
+        return bool(self.worker and self.worker.isRunning())
+
+    @property
+    def fresh(self):
+        return (self.state in ('在线','在线 · 无 GPU','在线 · GPU 不可用') and self.received > 0 and
+                time.monotonic() - self.received < max(10, self.profile["interval"]*2+5))
+
+    def start(self, password="", passphrase=""):
+        if self.desired:
+            return
+        if self.profile['mode']==profiles.MODES[2] and not password:
+            try:
+                password=vault.get_password(self.profile)
+            except Exception as exc:
+                self.state,self.message='待认证','无法读取已保存密码：'+str(exc)
+                self.changed.emit(self.id)
+                return
+        if self.profile["mode"] == profiles.MODES[2] and not password:
+            self.state, self.message = "待认证", "需要输入本次会话的服务器密码"
+            self.changed.emit(self.id)
+            return
+        self.password, self.passphrase = password, passphrase
+        self.desired = True
+        self.retry_count = 0
+        self.retry_timer.stop()
+        if not self.running:
+            self._launch()
+        # If an old worker is still shutting down, finished() launches the new session.
+
+    def _launch(self):
+        if not self.desired or self.running:
+            return
+        self.state, self.message = "连接中", "正在建立加密连接…"
+        worker = self.factory(self.profile, self.password, self.passphrase)
+        self.worker = worker
+        worker.data.connect(lambda data, w=worker: self._sample(w, data))
+        worker.status.connect(lambda message, w=worker: self._status(w, message))
+        worker.failed.connect(lambda message, w=worker: self._failed(w, message))
+        worker.trust.connect(lambda host, fp, w=worker: self._trust(w, host, fp))
+        worker.finished.connect(lambda w=worker: self._finished(w))
+        self.changed.emit(self.id)
+        worker.start()
+
+    def _status(self, worker, message):
+        if worker is self.worker and self.desired:
+            self.message = message
+            self.changed.emit(self.id)
+
+    def _trust(self, worker, host, fingerprint):
+        if worker is self.worker and self.desired:
+            self.state, self.message = "待确认", "请核对服务器主机指纹"
+            self.changed.emit(self.id)
+            self.trust.emit(self.id, host, fingerprint)
+        else:
+            worker.accept_key(False)
+
+    def _sample(self, worker, data):
+        if worker is not self.worker or not self.desired:
+            return
+        if data.get("error"):
+            self.state, self.message = "采样异常", str(data["error"])
+            self.changed.emit(self.id)
+            return
+        self.snapshot = data
+        self.received = time.monotonic()
+        self.sample_count += 1
+        self.retry_count = 0
+        capability=data.get('gpu_status','available')
+        self.state = '在线 · 无 GPU' if capability=='no_gpu' else '在线 · GPU 不可用' if capability=='unavailable' else '在线'
+        self.message=data.get('notice') or '只读实时采样正常'
+        for gpu in data["gpus"]:
+            values = self.history.setdefault(gpu["uuid"], deque(maxlen=60))
+            values.append(gpu.get("util"))
+        self.changed.emit(self.id)
+        self.sampled.emit(self.id)
+
+    def _failed(self, worker, message):
+        if worker is not self.worker or not self.desired:
+            return
+        self.state, self.message = "连接异常", message
+        fatal = any(token in message.lower() for token in (
+            "认证失败", "permission denied", "host key", "does not match", "未信任", "格式不正确",
+            "需要填写", "未找到 openssh", "跳板机", "端口应为"))
+        if fatal:
+            self.desired = False
+            self.password = self.passphrase = ""
+        self.changed.emit(self.id)
+
+    def _finished(self, worker):
+        if worker is not self.worker:
+            return
+        self.worker = None
+        worker.deleteLater()
+        if self.desired and self.profile.get("retry", True):
+            self.retry_count += 1
+            delay = min(60, 3 * 2 ** min(self.retry_count-1, 5))
+            self.state = "重连中"
+            self.message += f" · {delay} 秒后重连"
+            self.retry_timer.start(delay*1000)
+        else:
+            self.desired = False
+            self.password = self.passphrase = ""
+        self.changed.emit(self.id)
+        self.stopped.emit(self.id)
+
+    def stop(self):
+        self.desired = False
+        self.retry_timer.stop()
+        self.password = self.passphrase = ""
+        self.state, self.message = "已停止", "监控已停止；保留最后一次采样"
+        if self.worker:
+            self.worker.stop()
+        self.changed.emit(self.id)
+
+    def pause(self):
+        self.profile['autoconnect']=False
+        self.stop()
+        self.state,self.message='已暂停','已记住暂停状态；下次启动不会自动连接'
+        self.changed.emit(self.id)
+
+    def refresh_age(self):
+        if self.state in ('在线','在线 · 无 GPU','在线 · GPU 不可用') and not self.fresh:
+            self.state, self.message = "数据过期", "等待新采样；显示的是历史数据"
+            self.changed.emit(self.id)
