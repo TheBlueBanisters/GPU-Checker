@@ -1,3 +1,4 @@
+from themes import set_style, color as themed, is_day
 """App-drawn title bar; Qt delegates movement and resizing to the OS."""
 from PySide6.QtCore import Qt,QRectF,QPointF,QSize
 from PySide6.QtGui import QColor,QPainter,QPen,QLinearGradient
@@ -11,12 +12,18 @@ class WindowControl(QAbstractButton):
         self.kind,self.owner=kind,window
         self.setFixedSize(38,30)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.setAccessibleName({'min':'最小化','max':'最大化或还原','close':'关闭窗口'}[kind])
+        self.setAccessibleName({'min':'最小化','max':'最大化或还原','close':'关闭窗口','theme':'切换日间模式'}[kind])
         self.setToolTip(self.accessibleName())
         self.clicked.connect(self.activate)
+        if kind=='theme': self.sync_theme_label()
+
+    def sync_theme_label(self):
+        self.setAccessibleName('切换夜间模式' if is_day() else '切换日间模式')
+        self.setToolTip(self.accessibleName())
 
     def activate(self):
-        if self.kind=='min': self.owner.showMinimized()
+        if self.kind=='theme': self.owner.toggle_theme()
+        elif self.kind=='min': self.owner.showMinimized()
         elif self.kind=='max': self.owner.showNormal() if self.owner.isMaximized() else self.owner.showMaximized()
         else: self.owner.close()
 
@@ -27,16 +34,28 @@ class WindowControl(QAbstractButton):
         p=QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
         if self.underMouse() or self.isDown():
-            p.setBrush(QColor('#aa3f53' if self.kind=='close' else '#22374d'))
+            p.setBrush(themed('#aa3f53' if self.kind=='close' else '#22374d'))
             p.setPen(Qt.PenStyle.NoPen)
             p.drawPath(notch_path(QRectF(1,1,self.width()-2,self.height()-2),4))
-        p.setPen(QPen(QColor('#b7e1eb' if self.underMouse() else '#83a5bb'),1.6))
+        p.setPen(QPen(themed('#b7e1eb' if self.underMouse() else '#83a5bb'),1.6))
         x,y=self.width()/2,self.height()/2
-        if self.kind=='min': p.drawLine(QPointF(x-5,y+3),QPointF(x+5,y+3))
+        if self.kind=='theme':
+            if is_day():
+                from PySide6.QtGui import QPainterPath
+                moon=QPainterPath();moon.addEllipse(QRectF(x-6,y-6,12,12))
+                cut=QPainterPath();cut.addEllipse(QRectF(x-1,y-8,11,11))
+                p.fillPath(moon.subtracted(cut),p.pen().color())
+            else:
+                import math
+                p.drawEllipse(QRectF(x-3,y-3,6,6))
+                for i in range(8):
+                    a=i*math.pi/4
+                    p.drawLine(QPointF(x+5*math.cos(a),y+5*math.sin(a)),QPointF(x+7*math.cos(a),y+7*math.sin(a)))
+        elif self.kind=='min': p.drawLine(QPointF(x-5,y+3),QPointF(x+5,y+3))
         elif self.kind=='close':
             p.drawLine(QPointF(x-4,y-4),QPointF(x+4,y+4));p.drawLine(QPointF(x-4,y+4),QPointF(x+4,y-4))
         elif self.owner.isMaximized():
-            p.drawRect(QRectF(x-3,y-5,8,8));p.fillRect(QRectF(x-5,y-3,8,8),QColor('#101d30'));p.drawRect(QRectF(x-5,y-3,8,8))
+            p.drawRect(QRectF(x-3,y-5,8,8));p.fillRect(QRectF(x-5,y-3,8,8),themed('#101d30'));p.drawRect(QRectF(x-5,y-3,8,8))
         else: p.drawRoundedRect(QRectF(x-5,y-5,10,10),1,1)
 
 
@@ -47,34 +66,37 @@ class TitleBar(QFrame):
         self.compact=compact
         self.setObjectName('titleBar')
         self.setFixedHeight(42 if compact else 48)
-        self.setStyleSheet('QFrame#titleBar {background:qlineargradient(x1:0,y1:0,x2:1,y2:0,stop:0 #0d1d30,stop:0.5 #0b1727,stop:1 #101d30);border-bottom:1px solid #243b50;}')
+        set_style(self,'QFrame#titleBar {background:qlineargradient(x1:0,y1:0,x2:1,y2:0,stop:0 #0d1d30,stop:0.5 #0b1727,stop:1 #101d30);border-bottom:1px solid #243b50;}')
         row=QHBoxLayout(self)
         row.setContentsMargins(20,0,12,0)
         row.setSpacing(14)
         icon=QLabel()
         icon.setPixmap(window.windowIcon().pixmap(QSize(22,22)))
         title=QLabel(caption or 'GPU CHECKER')
-        title.setStyleSheet("font-family:'Orbitron','ZCOOL QingKe HuangYou';font-size:14px;font-weight:500;letter-spacing:1px;color:#88d5e2")
+        set_style(title,"font-family:'Orbitron','ZCOOL QingKe HuangYou';font-size:14px;font-weight:500;letter-spacing:1px;color:#88d5e2")
         subtitle=QLabel('REMOTE MONITOR')
-        subtitle.setStyleSheet("font-family:'Orbitron';font-size:9px;letter-spacing:1px;color:#557b96")
+        set_style(subtitle,"font-family:'Orbitron';font-size:9px;letter-spacing:1px;color:#557b96")
         for widget in (icon,title,subtitle):
             widget.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
             row.addWidget(widget)
         subtitle.setVisible(not compact)
         row.addStretch()
         self.fleet_label=QLabel('')
-        self.fleet_label.setStyleSheet('font-size:11px;color:#79a6ba')
+        set_style(self.fleet_label,'font-size:11px;color:#79a6ba')
         self.clock_label=QLabel('')
-        self.clock_label.setStyleSheet("font-family:'Orbitron';font-size:10px;color:#527d94")
+        set_style(self.clock_label,"font-family:'Orbitron';font-size:10px;color:#527d94")
         for label in (self.fleet_label,self.clock_label):
             label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
             row.addWidget(label)
             label.setVisible(not compact)
+        if not compact:
+            self.theme_button=WindowControl('theme',window)
+            row.addWidget(self.theme_button)
         row.addSpacing(8)
         controls=QFrame()
         controls.setObjectName('windowControls')
         controls.setFixedHeight(34)
-        controls.setStyleSheet('QFrame#windowControls {background:#122638;border:1px solid #31576b;border-radius:1px;}')
+        set_style(controls,'QFrame#windowControls {background:#122638;border:1px solid #31576b;border-radius:1px;}')
         group=QHBoxLayout(controls)
         group.setContentsMargins(2,1,2,1)
         group.setSpacing(2)
@@ -90,8 +112,8 @@ class TitleBar(QFrame):
         super().paintEvent(event)
         p=QPainter(self)
         gradient=QLinearGradient(0,0,400,0)
-        gradient.setColorAt(0,QColor(89,221,217,150))
-        gradient.setColorAt(1,QColor(89,221,217,0))
+        gradient.setColorAt(0,themed(89,221,217,150))
+        gradient.setColorAt(1,themed(89,221,217,0))
         p.fillRect(0,0,400,1,gradient)
 
     def mousePressEvent(self,event):

@@ -1,3 +1,6 @@
+from themes import set_style
+import themes
+from host_list import HostList
 import json
 from pathlib import Path
 import sys
@@ -24,6 +27,15 @@ ASSETS=Path(getattr(sys,'_MEIPASS',Path(__file__).parent.parent))/'assets'
 
 
 class Window(QMainWindow):
+    def toggle_theme(self):
+        mode='night' if themes.is_day() else 'day'
+        themes.apply(QApplication.instance(),mode,STYLE)
+        DATA.mkdir(parents=True,exist_ok=True)
+        path=DATA/'ui_preferences.json'
+        temporary=path.with_suffix('.tmp')
+        temporary.write_text(json.dumps({'theme':mode}),encoding='utf-8')
+        temporary.replace(path)
+
     def __init__(self,autostart=True,session_factory=HostSession):
         super().__init__()
         self.setWindowTitle('GPU Checker · 多主机算力监控')
@@ -67,7 +79,7 @@ class Window(QMainWindow):
         central=Backdrop()
         shell=QWidget()
         shell.setObjectName('shell')
-        shell.setStyleSheet('QWidget#shell {background:#0b1424;border:1px solid #263a50;}')
+        set_style(shell,'QWidget#shell {background:#0b1424;border:1px solid #263a50;}')
         self.setCentralWidget(shell)
         outer=QVBoxLayout(shell)
         outer.setContentsMargins(1,1,1,1)
@@ -102,7 +114,7 @@ class Window(QMainWindow):
         self.host_search.setPlaceholderText('搜索主机…')
         self.host_search.textChanged.connect(self.filter_hosts)
         sb.addWidget(self.host_search)
-        self.host_list=QListWidget()
+        self.host_list=HostList()
         self.host_list.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.host_list.currentRowChanged.connect(self.select_row)
         sb.addWidget(self.host_list,1)
@@ -179,7 +191,7 @@ class Window(QMainWindow):
         legend.setSpacing(12)
         for state in ('idle','available','busy','blocked','unknown'):
             entry=label('◆ '+LABELS[state])
-            entry.setStyleSheet(f'font-size:13px;color:{COLORS[state]}')
+            set_style(entry,f'font-size:13px;color:{COLORS[state]}')
             legend.addWidget(entry)
         self.availability_legend.setToolTip('绿：空闲；蓝：可用；琥珀：占用；红：不可用；灰：未知／观察中。可用包含空闲。')
         row.addWidget(self.availability_legend)
@@ -187,7 +199,7 @@ class Window(QMainWindow):
         content.addLayout(row)
         self.card_scroll=QScrollArea()
         self.card_scroll.setWidgetResizable(True)
-        self.card_scroll.setFixedHeight(216)
+        self.card_scroll.setFixedHeight(242)
         self.card_widget=QWidget()
         self.card_layout=QHBoxLayout(self.card_widget)
         self.card_layout.setContentsMargins(0,0,0,5)
@@ -726,7 +738,7 @@ class Window(QMainWindow):
                 control.update()
 
     def help(self):
-        self.notify('GPU Checker v7 使用说明','左侧主机在后台持续采集，点击只切换右侧视图。暂停某台或全部暂停会保存状态，下次启动仍暂停；恢复后重新启用自动连接。正常关闭窗口不会改变暂停设置。\n\n编辑主机可勾选记住服务器密码，存入当前 Windows 用户的凭据管理器。程序启动时可自动取用；暂停不会删除已保存密码。取消勾选并保存可删除凭据。换电脑需重新输入。私钥口令仍仅保留在会话内存。\n\n无 GPU 主机显示在线并继续保活；驱动不可用与无设备分别显示。不提权，不控制用卡进程，不读取环境或完整命令行。\n\nOpenSSH 模式支持系统 config、Agent 和跳板机；内置密码模式仅直连。新主机需核对指纹，已有密钥变化拒绝连接。\n\n远端要求 Linux 与 Python 3.6+；GPU 遥测另需 NVIDIA 驱动和 nvidia-smi。\n\n配置位置：'+str(DATA)+'\nexe 旁放 portable.flag 可启用 data/ 便携模式。密码不进入 JSON、config 或迁移包，私钥请独立保管。')
+        self.notify('GPU Checker v8 使用说明','左侧主机在后台持续采集，点击只切换右侧视图。暂停某台或全部暂停会保存状态，下次启动仍暂停；恢复后重新启用自动连接。正常关闭窗口不会改变暂停设置。\n\n编辑主机可勾选记住服务器密码，存入当前 Windows 用户的凭据管理器。程序启动时可自动取用；暂停不会删除已保存密码。取消勾选并保存可删除凭据。换电脑需重新输入。私钥口令仍仅保留在会话内存。\n\n无 GPU 主机显示在线并继续保活；驱动不可用与无设备分别显示。不提权，不控制用卡进程，不读取环境或完整命令行。\n\nOpenSSH 模式支持系统 config、Agent 和跳板机；内置密码模式仅直连。新主机需核对指纹，已有密钥变化拒绝连接。\n\n远端要求 Linux 与 Python 3.6+；GPU 遥测另需 NVIDIA 驱动和 nvidia-smi。\n\n配置位置：'+str(DATA)+'\nexe 旁放 portable.flag 可启用 data/ 便携模式。密码不进入 JSON、config 或迁移包，私钥请独立保管。')
 
     def closeEvent(self,event):
         self.closing=True
@@ -751,14 +763,12 @@ def configure_app(app):
     font.setFamilies(['Rajdhani Medium','Rajdhani','ZCOOL QingKe HuangYou','Noto Sans SC'])
     font.setPointSize(10)
     app.setFont(font)
-    palette=QPalette()
-    for role,color in ((QPalette.ColorRole.Window,'#080f1e'),(QPalette.ColorRole.Base,'#0e1b2d'),
-        (QPalette.ColorRole.WindowText,'#cddcea'),(QPalette.ColorRole.Text,'#cddcea'),
-        (QPalette.ColorRole.Button,'#20364f'),(QPalette.ColorRole.ButtonText,'#d5eaff'),
-        (QPalette.ColorRole.Highlight,'#1b697b'),(QPalette.ColorRole.HighlightedText,'#e7ffff')):
-        palette.setColor(role,QColor(color))
-    app.setPalette(palette)
-    app.setStyleSheet(STYLE)
+    try:
+        mode=json.loads((DATA/'ui_preferences.json').read_text(encoding='utf-8')).get('theme','night')
+    except Exception:
+        mode='night'
+    themes.apply(app,mode,STYLE)
+
 
 
 def main():

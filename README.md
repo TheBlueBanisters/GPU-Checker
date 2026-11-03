@@ -1,6 +1,6 @@
-# GPU Checker v7 · 多主机算力监控
+# GPU Checker v8 · 多主机算力监控
 
-Windows 上的轻量远程 NVIDIA GPU 查看器。新版程序在 `delivery/GPUChecker-v7.exe`，双击即可运行，不需要安装 Python、Qt 或 AI 服务。深色科幻界面包含荧光曲线、选中高亮、网格背景和半透明面板。
+Windows 上的轻量远程 NVIDIA GPU 查看器。新版程序在 `delivery/GPUChecker-v8.exe`，双击即可运行，不需要安装 Python、Qt 或 AI 服务。深色科幻界面包含荧光曲线、选中高亮、网格背景和半透明面板。
 
 ## 快速开始
 
@@ -120,3 +120,7 @@ GPU 卡片状态为：绿色空闲、蓝色可用、琥珀占用、红色不可�
 - Prohibited、独占模式中的活跃上下文、驱动恢复请求、不可纠错 ECC、重映射失败或达到驱动报告的减速温度等条件会排除可用。MIG 物理卡不自动推断各实例可用性。
 
 这是只读资源观测，不创建 CUDA 上下文、不预留显存、不探测任务启动；不代替集群调度器，也不保证特定任务或账号能成功分配资源。每张卡的状态提示会解释原因。相关字段依据 [NVIDIA nvidia-smi 文档](https://docs.nvidia.com/deploy/nvidia-smi/index.html) 和 [恢复状态说明](https://docs.nvidia.com/deploy/a100-gpu-mem-error-mgmt/error-recovery-and-response-flags.html)。
+
+## v8 界面与主题
+
+顶栏太阳／月亮按钮切换日夜模式，自动记住选择。日间使用浅蓝灰面板和深色文字，保留 GPU 状态颜色含义。左侧主机卡悬停高亮，停留约 1 秒后播放水波，每隔约 1.8 秒重复；移开、滚动或隐藏即停止。显卡型号增至 17px，支持换行；进程表悬停／选中时保留清晰列分线。主题不改变监控连接或暂停状态。主题偏好存于数据目录 ui_preferences.json。

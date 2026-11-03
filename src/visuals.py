@@ -1,3 +1,4 @@
+from themes import set_style, color as themed, is_day
 from pathlib import Path
 from PySide6.QtCore import Qt,QRectF,QPointF,QVariantAnimation,QSize,QEvent,QEasingCurve
 from PySide6.QtGui import QColor, QPainter, QPainterPath, QPen, QLinearGradient, QRadialGradient,QFont
@@ -116,7 +117,7 @@ class MechPanel(QFrame):
         self.update()
 
     def eventFilter(self,watched,event):
-        if self.feedback_enabled:
+        if getattr(self,'feedback_enabled',False):
             if event.type()==QEvent.Type.MouseMove:
                 self.feedback_point=QPointF(watched.mapTo(self,event.position().toPoint()))
                 self._hover_to(1.)
@@ -127,17 +128,17 @@ class MechPanel(QFrame):
         return super().eventFilter(watched,event)
 
     def enterEvent(self,event):
-        if self.feedback_enabled:
+        if getattr(self,'feedback_enabled',False):
             self._hover_to(1.)
         super().enterEvent(event)
 
     def leaveEvent(self,event):
-        if self.feedback_enabled:
+        if getattr(self,'feedback_enabled',False):
             self._hover_to(0.)
         super().leaveEvent(event)
 
     def mouseMoveEvent(self,event):
-        if self.feedback_enabled:
+        if getattr(self,'feedback_enabled',False):
             self.feedback_point=event.position()
             self.update()
         super().mouseMoveEvent(event)
@@ -165,19 +166,22 @@ class MechPanel(QFrame):
         gradient=QLinearGradient(0,0,self.width(),self.height())
         tones=[(18,38,59),(26,35,59),(18,44,48),(34,36,52)]
         tone=(29,37,43) if self.property('noGpu') else tones[int(self.property('hostTone') or 0)%len(tones)] if role=='hostTile' else (17,37,56)
+        if is_day():
+            tones=[(222,237,246),(232,230,246),(221,240,234),(235,232,240)]
+            tone=(232,237,241) if self.property('noGpu') else tones[int(self.property('hostTone') or 0)%4] if role=='hostTile' else (239,247,251)
         state_color=self.property('availabilityColor')
         if role=='card' and state_color:
-            tint=QColor(state_color).getRgb()
+            tint=themed(state_color).getRgb()
             tone=tuple(round(tone[i]*.85+tint[i]*.15) for i in range(3))
-        gradient.setColorAt(0,QColor(*(tuple(min(255,n+7) for n in tone) if selected else tone),230 if selected else 222))
-        gradient.setColorAt(1,QColor(12,28,46,225))
+        gradient.setColorAt(0,(QColor if is_day() else themed)(*(tuple(min(255,n+7) for n in tone) if selected else tone),230 if selected else 222))
+        gradient.setColorAt(1,themed(12,28,46,225))
         p.setBrush(gradient)
-        edge=QColor(state_color) if state_color else QColor('#58c8ce' if selected else '#2c5368')
+        edge=themed(state_color) if state_color else themed('#58c8ce' if selected else '#2c5368')
         if state_color:
             edge.setAlpha(165)
         p.setPen(QPen(edge,1))
         p.drawPath(notch_path(rect,10))
-        accent=QColor(state_color or ('#64e5d8' if selected else '#3e98ac' if role=='card' else '#315e76'))
+        accent=themed(state_color or ('#64e5d8' if selected else '#3e98ac' if role=='card' else '#315e76'))
         p.setPen(QPen(accent,2))
         p.drawLine(QPointF(1,1),QPointF(min(47,self.width()/3),1))
         p.drawLine(QPointF(self.width()-1,self.height()-1),QPointF(self.width()-24,self.height()-1))
@@ -188,30 +192,30 @@ class MechPanel(QFrame):
             p.setClipPath(outline)
             if self.hover_amount>0:
                 glow=QRadialGradient(self.feedback_point,max(self.width(),self.height())*.85)
-                glow.setColorAt(0,QColor(60,205,210,int(43*self.hover_amount)))
-                glow.setColorAt(1,QColor(30,130,180,0))
+                glow.setColorAt(0,themed(60,205,210,int(43*self.hover_amount)))
+                glow.setColorAt(1,themed(30,130,180,0))
                 p.fillPath(outline,glow)
                 p.setBrush(Qt.BrushStyle.NoBrush)
-                p.setPen(QPen(QColor(97,239,220,int(175*self.hover_amount)),1.6))
+                p.setPen(QPen(themed(97,239,220,int(175*self.hover_amount)),1.6))
                 p.drawPath(outline)
-                p.setPen(QPen(QColor(102,255,227,int(90*self.hover_amount)),4))
+                p.setPen(QPen(themed(102,255,227,int(90*self.hover_amount)),4))
                 p.drawLine(QPointF(1,1),QPointF(min(72,self.width()/2),1))
             if self.click_progress<1:
                 t=self.click_progress
                 radius=max(2,(self.width()**2+self.height()**2)**.5*t)
                 glow=QRadialGradient(self.click_origin,radius)
-                glow.setColorAt(0,QColor(70,240,215,int(42*(1-t))))
-                glow.setColorAt(.8,QColor(70,220,230,int(27*(1-t))))
-                glow.setColorAt(1,QColor(70,220,230,0))
+                glow.setColorAt(0,themed(70,240,215,int(42*(1-t))))
+                glow.setColorAt(.8,themed(70,220,230,int(27*(1-t))))
+                glow.setColorAt(1,themed(70,220,230,0))
                 p.fillPath(outline,glow)
                 p.setBrush(Qt.BrushStyle.NoBrush)
-                p.setPen(QPen(QColor(115,255,230,int(155*(1-t))),1.8))
+                p.setPen(QPen(themed(115,255,230,int(155*(1-t))),1.8))
                 p.drawEllipse(self.click_origin,radius,radius)
                 scan_x=(self.width()+50)*t-25
                 scan=QLinearGradient(scan_x-22,0,scan_x+22,0)
-                scan.setColorAt(0,QColor(83,239,224,0))
-                scan.setColorAt(.5,QColor(83,239,224,int(56*(1-t))))
-                scan.setColorAt(1,QColor(83,239,224,0))
+                scan.setColorAt(0,themed(83,239,224,0))
+                scan.setColorAt(.5,themed(83,239,224,int(56*(1-t))))
+                scan.setColorAt(1,themed(83,239,224,0))
                 p.fillRect(QRectF(scan_x-22,0,44,self.height()),scan)
 
 
@@ -271,17 +275,17 @@ class ModernButton(QPushButton):
     def paintEvent(self,event):
         p=QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
-        a=QColor('#62ddc1' if self.primary else '#17263a')
-        b=QColor('#99f4df' if self.primary else '#2c425a')
+        a=themed('#62ddc1' if self.primary else '#17263a')
+        b=themed('#99f4df' if self.primary else '#2c425a')
         color=QColor(*[int(a.getRgb()[i]+(b.getRgb()[i]-a.getRgb()[i])*self.phase) for i in range(3)])
         if self.ghost:
             color.setAlpha(int(10+80*self.phase))
         if self.isDown():
             color=color.darker(115)
         p.setBrush(color)
-        p.setPen(QPen(QColor('#41576c' if not self.primary else '#7eefd4'),1) if not self.ghost else Qt.PenStyle.NoPen)
+        p.setPen(QPen(themed('#41576c' if not self.primary else '#7eefd4'),1) if not self.ghost else Qt.PenStyle.NoPen)
         p.drawPath(notch_path(QRectF(1,1,self.width()-2,self.height()-2),7))
-        fg=QColor('#092f2b' if self.primary else '#ceddea') if self.isEnabled() else QColor('#56677c')
+        fg=themed('#092f2b' if self.primary else '#ceddea') if self.isEnabled() else themed('#56677c')
         p.setPen(fg)
         text=self.text().lstrip('+ ')
         font=self.font()
@@ -320,7 +324,7 @@ class ModernButton(QPushButton):
         p.drawText(QRectF(start+25,0,width+3,self.height()),Qt.AlignmentFlag.AlignVCenter,text)
         if self.hasFocus() and self.keyboard_focus:
             p.setBrush(Qt.BrushStyle.NoBrush)
-            p.setPen(QPen(QColor('#b1f6e5'),1))
+            p.setPen(QPen(themed('#b1f6e5'),1))
             p.drawPath(notch_path(QRectF(4,4,self.width()-8,self.height()-8),5))
 
 
@@ -339,14 +343,14 @@ def fmt(value, suffix="", digits=0):
 class Backdrop(QWidget):
     def paintEvent(self, event):
         p = QPainter(self)
-        p.fillRect(self.rect(), QColor("#080f1e"))
-        for x, y, radius, color in ((self.width()*.75, 0, 600, QColor(0,190,202,24)),
-                                    (self.width()*.9, self.height(), 650, QColor(110,57,220,23))):
+        p.fillRect(self.rect(), themed("#080f1e"))
+        for x, y, radius, color in ((self.width()*.75, 0, 600, themed(0,190,202,24)),
+                                    (self.width()*.9, self.height(), 650, themed(110,57,220,23))):
             g = QRadialGradient(x,y,radius)
             g.setColorAt(0,color)
-            g.setColorAt(1,QColor(0,0,0,0))
+            g.setColorAt(1,themed(0,0,0,0))
             p.fillRect(self.rect(),g)
-        p.setPen(QColor(75,143,183,10))
+        p.setPen(themed(75,143,183,10))
         for x in range(0,self.width(),40):
             p.drawLine(x,0,x,self.height())
         for y in range(0,self.height(),40):
@@ -364,7 +368,7 @@ class Sparkline(QWidget):
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
         w,h = self.width(),self.height()
-        p.setPen(QPen(QColor("#253d54"),1))
+        p.setPen(QPen(themed("#253d54"),1))
         for y in (h-3,h//2):
             p.drawLine(0,y,w,y)
         path = QPainterPath()
@@ -380,13 +384,13 @@ class Sparkline(QWidget):
             else:
                 path.lineTo(x,y)
             last = (x,y)
-        glow=QColor(self.color);glow.setAlpha(30)
+        glow=themed(self.color);glow.setAlpha(30)
         p.setPen(QPen(glow,7))
         p.drawPath(path)
-        p.setPen(QPen(self.color,1.7))
+        p.setPen(QPen(themed(self.color),1.7))
         p.drawPath(path)
         if last:
-            p.setBrush(self.color.lighter(130))
+            p.setBrush(themed(self.color).lighter(130))
             p.setPen(Qt.PenStyle.NoPen)
             p.drawEllipse(last[0]-2,last[1]-2,4,4)
 
@@ -406,7 +410,10 @@ class GPUCard(MechPanel):
         title_row.addWidget(self.state_label)
         box.addLayout(title_row)
         self.name=label("")
-        self.name.setStyleSheet("font-size:12px;font-weight:600;color:#bdd5e9")
+        self.name.setWordWrap(True)
+        self.name.setMinimumHeight(24)
+        self.name.setMaximumHeight(44)
+        set_style(self.name,"font-size:17px;font-weight:600;color:#bdd5e9")
         self.metric_label=label("","metric")
         self.spark=Sparkline()
         self.memory=label("","muted")
@@ -422,7 +429,7 @@ class GPUCard(MechPanel):
         self.title.setText(f"GPU {g['index']:02d}  /  {g['state']}")
         self.title.setToolTip(g["uuid"])
         name=g["name"].replace("NVIDIA ","")
-        self.name.setText(name[:27]+("…" if len(name)>27 else ""))
+        self.name.setText(name)
         self.name.setToolTip(g["name"])
         self.metric_label.setText(fmt(g["util"],"%"))
         self.spark.values=list(history)
@@ -438,10 +445,10 @@ class GPUCard(MechPanel):
         color=state['color']
         self.setProperty('availabilityColor',color)
         self.state_label.setText(state['label'])
-        self.state_label.setStyleSheet(f'font-size:13px;color:{color}')
+        set_style(self.state_label,f'font-size:13px;color:{color}')
         self.state_label.setToolTip(state['reason'])
-        self.metric_label.setStyleSheet(f'color:{color}')
-        self.bar.setStyleSheet(f'QProgressBar::chunk {{background:{color};border-radius:0;}}')
+        set_style(self.metric_label,f'color:{color}')
+        set_style(self.bar,f'QProgressBar::chunk {{background:{color};border-radius:0;}}')
         self.spark.color=QColor(color)
         self.spark.update()
         self.setToolTip(state['label']+'：'+state['reason'])
@@ -452,6 +459,7 @@ class HostTile(MechPanel):
     def __init__(self,session,tone_index=0):
         super().__init__()
         self.setObjectName("hostTile")
+        self.feedback_enabled=True
         self.setProperty('hostTone',tone_index)
         self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
         box=QVBoxLayout(self)
@@ -459,7 +467,7 @@ class HostTile(MechPanel):
         box.setSpacing(5)
         row=QHBoxLayout()
         self.name=label(session.profile['name'])
-        self.name.setStyleSheet("font-family:'Rajdhani Medium','Rajdhani','ZCOOL QingKe HuangYou';font-weight:500;font-size:17px;color:#95cfe0")
+        set_style(self.name,"font-family:'Rajdhani Medium','Rajdhani','ZCOOL QingKe HuangYou';font-weight:500;font-size:17px;color:#95cfe0")
         self.dot=StatusIndicator('')
         self.dot.setFixedSize(10,16)
         row.addWidget(self.name,1)
@@ -470,7 +478,7 @@ class HostTile(MechPanel):
         self.summary=label("","muted")
         box.addWidget(self.summary)
         self.capacity=label('空闲 — · 可用 —','muted')
-        self.capacity.setStyleSheet('font-size:14px;color:#78a9bd')
+        set_style(self.capacity,'font-size:14px;color:#78a9bd')
         box.addWidget(self.capacity)
         self.bar=QProgressBar()
         self.bar.setTextVisible(False)
@@ -479,7 +487,7 @@ class HostTile(MechPanel):
 
     def update_data(self,session,selected=False):
         no_gpu=session.gpu_hint=='no_gpu'
-        self.capacity.setStyleSheet('font-size:14px;color:'+('#7a8c97' if no_gpu else '#78a9bd'))
+        set_style(self.capacity,'font-size:14px;color:'+('#7a8c97' if no_gpu else '#78a9bd'))
         self.setProperty('noGpu',no_gpu)
         self.setProperty("selected",selected)
         self.style().unpolish(self)
@@ -505,7 +513,7 @@ class HostTile(MechPanel):
         counts=session.availability_counts()
         if no_gpu:
             self.capacity.setText('无 GPU · 仅 SSH 连接' if session.fresh else '无 GPU（上次检测）')
-            self.capacity.setStyleSheet('font-size:14px;color:#7a8c97')
+            set_style(self.capacity,'font-size:14px;color:#7a8c97')
         elif counts is not None:
             self.capacity.setText(f"空闲 {counts['idle']} · 可用 {counts['available']} / {counts['total']}"+(' · 待确认' if counts['unknown'] else ''))
         else:
@@ -538,10 +546,10 @@ class StatusIndicator(QWidget):
         p=QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
         p.setPen(Qt.PenStyle.NoPen)
-        p.setBrush(self.tone)
+        p.setBrush(themed(self.tone))
         path=QPainterPath()
         path.moveTo(1,self.height()/2);path.lineTo(5,self.height()/2-4);path.lineTo(9,self.height()/2);path.lineTo(5,self.height()/2+4);path.closeSubpath()
         p.drawPath(path)
-        p.setPen(self.tone)
+        p.setPen(themed(self.tone))
         p.setFont(self.font())
         p.drawText(QRectF(17,0,self.width()-17,self.height()),Qt.AlignmentFlag.AlignVCenter,self.value)

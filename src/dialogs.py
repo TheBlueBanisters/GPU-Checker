@@ -1,3 +1,4 @@
+from themes import set_style
 from pathlib import Path
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (QDialog,QVBoxLayout,QHBoxLayout,QFormLayout,QLineEdit,QComboBox,
@@ -175,7 +176,7 @@ class ConfigDialog(MechDialog):
         row.addStretch()
         box.addLayout(row)
         self.editor=QPlainTextEdit()
-        self.editor.setStyleSheet("QPlainTextEdit {background:#0b1728;color:#8ac4d5;border:1px solid #345570;border-radius:1px;padding:14px;font-family:'JetBrains Mono','ZCOOL QingKe HuangYou';font-size:13px;}")
+        set_style(self.editor,"QPlainTextEdit {background:#0b1728;color:#8ac4d5;border:1px solid #345570;border-radius:1px;padding:14px;font-family:'JetBrains Mono','ZCOOL QingKe HuangYou';font-size:13px;}")
         self.editor.setPlaceholderText('Host lab-gpu\n    HostName gpu.example.com\n    User yourname\n    Port 22\n    IdentityFile ~/.ssh/id_ed25519\n\n# 可以一次粘贴多个 Host 条目')
         box.addWidget(self.editor,1)
         self.report=label('尚未检查。保存前会自动校验，失败不会覆盖原配置。','muted')
@@ -214,11 +215,11 @@ class ConfigDialog(MechDialog):
     def check(self):
         try:
             names,info=profiles.validate_config(self.editor.toPlainText())
-            self.report.setStyleSheet('color:#79f4cb')
+            set_style(self.report,'color:#79f4cb')
             self.report.setText(f'校验通过，识别 {len(names)} 台主机：\n'+'\n'.join(f"{name} → {info[name].get('user')}@{info[name].get('hostname',name)}:{info[name].get('port',22)}" for name in names))
             return True
         except Exception as exc:
-            self.report.setStyleSheet('color:#ffadba')
+            set_style(self.report,'color:#ffadba')
             self.report.setText(str(exc))
             return False
 

@@ -1,4 +1,5 @@
 """Header and cells use identical text insets and column alignments."""
+from themes import color as themed
 from PySide6.QtCore import Qt,QRect,QEvent
 from PySide6.QtGui import QColor,QFont
 from PySide6.QtWidgets import QHeaderView,QStyledItemDelegate,QStyle,QTableWidget
@@ -51,14 +52,14 @@ class ProcessHeader(QHeaderView):
 
     def paintSection(self,painter,rect,index):
         painter.save()
-        painter.fillRect(rect,QColor('#16263a'))
-        painter.setPen(QColor('#2b4056'))
+        painter.fillRect(rect,themed('#16263a'))
+        painter.setPen(themed('#2b4056'))
         painter.drawLine(rect.bottomLeft(),rect.bottomRight())
         painter.drawLine(rect.topRight(),rect.bottomRight())
         font=self.font()
         font.setWeight(QFont.Weight.Medium)
         painter.setFont(font)
-        painter.setPen(QColor('#9ab4c9'))
+        painter.setPen(themed('#9ab4c9'))
         value=str(self.model().headerData(index,self.orientation()) or '')
         area=text_rect(rect)
         painter.drawText(area,ALIGNMENTS[index],painter.fontMetrics().elidedText(value,Qt.TextElideMode.ElideRight,area.width()))
@@ -71,15 +72,15 @@ class ProcessCells(QStyledItemDelegate):
         hovered=getattr(self.parent(),'hovered_row',-1)==index.row()
         selected=bool(option.state & QStyle.StateFlag.State_Selected)
         color='#205568' if selected and hovered else '#19485a' if selected else '#143449' if hovered else '#0c192b'
-        painter.fillRect(option.rect,QColor(color))
+        painter.fillRect(option.rect,themed(color))
         if hovered and index.column()==0:
-            painter.fillRect(QRect(option.rect.x(),option.rect.y(),3,option.rect.height()),QColor('#61c9cf'))
-        painter.setPen(QColor('#203247'))
+            painter.fillRect(QRect(option.rect.x(),option.rect.y(),3,option.rect.height()),themed('#61c9cf'))
+        painter.setPen(themed('#588fa3' if hovered or selected else '#2e4a60',day='#819fb2' if hovered or selected else '#b3c7d3'))
         painter.drawLine(option.rect.bottomLeft(),option.rect.bottomRight())
         painter.drawLine(option.rect.topRight(),option.rect.bottomRight())
         painter.setFont(option.font)
         foreground=index.data(Qt.ItemDataRole.ForegroundRole)
-        painter.setPen(foreground.color() if foreground else QColor('#d0dfec'))
+        painter.setPen(themed(foreground.color()) if foreground else themed('#d0dfec'))
         area=text_rect(option.rect)
         value=str(index.data() or '')
         painter.drawText(area,ALIGNMENTS[index.column()],painter.fontMetrics().elidedText(value,Qt.TextElideMode.ElideRight,max(0,area.width())))
