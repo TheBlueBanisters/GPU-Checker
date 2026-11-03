@@ -4,6 +4,7 @@ from PySide6.QtCore import Qt,QRectF,QPointF,QSize
 from PySide6.QtGui import QColor,QPainter,QPen,QLinearGradient
 from PySide6.QtWidgets import QWidget,QFrame,QLabel,QHBoxLayout,QAbstractButton
 from visuals import notch_path
+from version import APP_VERSION
 
 
 class WindowControl(QAbstractButton):
@@ -74,7 +75,7 @@ class TitleBar(QFrame):
         icon.setPixmap(window.windowIcon().pixmap(QSize(22,22)))
         title=QLabel(caption or 'GPU CHECKER')
         set_style(title,"font-family:'Orbitron','ZCOOL QingKe HuangYou';font-size:14px;font-weight:500;letter-spacing:1px;color:#88d5e2")
-        subtitle=QLabel('REMOTE MONITOR')
+        subtitle=QLabel('REMOTE MONITOR / '+APP_VERSION)
         set_style(subtitle,"font-family:'Orbitron';font-size:9px;letter-spacing:1px;color:#557b96")
         for widget in (icon,title,subtitle):
             widget.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)

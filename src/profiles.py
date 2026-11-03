@@ -66,6 +66,8 @@ def save(items,removed_ids=()):
 
 
 def load():
+    from storage import migrate_once
+    migrate_once(DATA)
     target=DATA/'profiles.json'
     registry=catalog()
     if target.exists():

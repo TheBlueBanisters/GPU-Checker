@@ -13,11 +13,12 @@ import threading
 import time
 
 import paramiko
+from storage import data_dir
 from PySide6.QtCore import QThread, Signal
 
 
 BASE = Path(sys.executable).parent if getattr(sys, "frozen", False) else Path(__file__).resolve().parent.parent
-DATA = BASE / "data" if (BASE / "portable.flag").exists() else Path(os.getenv("LOCALAPPDATA", str(Path.home() / ".local/share"))) / "GPUChecker"
+DATA = data_dir(BASE)
 HOST_KEY_LOCK = threading.Lock()
 
 

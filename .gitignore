@@ -20,3 +20,6 @@ delivery/**
 snapshots/
 runtime_state.json
 host_catalog.json
+
+storage_migration.json
+storage-probe.json

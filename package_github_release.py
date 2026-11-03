@@ -7,14 +7,18 @@ import subprocess
 import zipfile
 
 ROOT=Path(__file__).resolve().parent
-VERSION='14.0.0'
+VERSION='14.0.1'
 OUT=ROOT/'delivery/releases'/('v'+VERSION)
 
 
 def main():
     parser=argparse.ArgumentParser()
-    parser.add_argument('--exe',type=Path,default=ROOT/'delivery/GPUChecker-v14.exe')
+    parser.add_argument('--exe',type=Path,default=ROOT/'build/release-runtime/GPUChecker.exe')
     args=parser.parse_args()
+    from PyInstaller.archive.readers import CArchiveReader
+    version_code=CArchiveReader(args.exe).open_embedded_archive('PYZ.pyz').extract('version')
+    if VERSION not in version_code.co_consts or 'APP_VERSION' not in version_code.co_names:
+        raise ValueError('Executable version does not match release version')
     OUT.mkdir(parents=True,exist_ok=True)
     executable=OUT/'GPUChecker.exe'
     shutil.copy2(args.exe,executable)

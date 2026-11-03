@@ -1,8 +1,8 @@
-# GPU Checker 14.0.0 · 开始使用
+# GPU Checker 14.0.1 · 开始使用
 
 适用 Windows 10 / 11 x64。程序已包含 Python、Qt、字体和内置 SSH 运行库，无须安装开发环境或使用 AI 服务。
 
-1. 下载 `GPUChecker-v14.0.0-Windows-x64.zip`，完整解压到任意可访问文件夹。
+1. 下载 `GPUChecker-v14.0.1-Windows-x64.zip`，完整解压到任意可访问文件夹。
 2. 双击 `GPUChecker.exe`。已经使用过本程序的电脑会继续加载原主机；新电脑首次启动为空列表。
 3. 点击“添加主机”，或“粘贴 / 编辑 config”导入自己的 SSH 配置，再启用监控。
 
@@ -33,7 +33,7 @@ Host my-gpu
 
 ## 更新与搬家
 
-默认配置在当前 Windows 用户的 `%LOCALAPPDATA%\GPUChecker`，不随 exe 文件名或解压目录改变。更新时退出旧程序，再运行新 exe，原主机、暂停状态和快照继续保留。
+默认配置在当前 Windows 用户的 `%USERPROFILE%\.gpu-checker`，14.0.1 首次会自动迁移旧版 AppData 和包缓存中的记录（保留备份），不随 exe 文件名或解压目录改变。更新时退出旧程序，再运行新 exe，原主机、暂停状态和快照继续保留。
 
 便携模式为可选项：退出程序，将随包 `portable.flag.example` 改名为 `portable.flag`，配置改为 exe 旁的 `data/`。切换前可通过“迁移配置”导出再导入；要带上历史快照，请复制完整原配置目录到 `data/`。不要在已有配置时无意开启便携模式，否则将读取另一个配置目录。
 
@@ -44,6 +44,6 @@ Host my-gpu
 ## 附件
 
 - `GPUChecker.exe`：成品程序，也可单独下载直接运行。
-- `GPUChecker-v14.0.0-Windows-x64.zip`：推荐下载，含程序、说明和第三方许可证。
-- `GPUChecker-v14.0.0-source.zip`：可重新构建的源码及锁定依赖，普通使用无需下载。
+- `GPUChecker-v14.0.1-Windows-x64.zip`：推荐下载，含程序、说明和第三方许可证。
+- `GPUChecker-v14.0.1-source.zip`：可重新构建的源码及锁定依赖，普通使用无需下载。
 - `SHA256SUMS.txt`：下载文件的 SHA-256 校验值。

@@ -1,10 +1,10 @@
 # GPU Checker v14 · 多主机算力监控
 
-Windows 上的轻量远程 NVIDIA GPU 查看器。新版程序在 `delivery/GPUChecker-v14.exe`，双击即可运行，不需要安装 Python、Qt 或 AI 服务。深色科幻界面包含荧光曲线、选中高亮、网格背景和半透明面板。
+Windows 上的轻量远程 NVIDIA GPU 查看器。正式版请下载 Release 的 `GPUChecker.exe`，双击即可运行，不需要安装 Python、Qt 或 AI 服务。深色科幻界面包含荧光曲线、选中高亮、网格背景和半透明面板。
 
 ## Release 下载
 
-Windows 10/11 x64 请到 [GitHub Releases](https://github.com/TheBlueBanisters/GPU-Checker/releases/latest) 下载 `GPUChecker-v14.0.0-Windows-x64.zip`，解压后双击 `GPUChecker.exe`。不需要安装 Python、Qt 或 AI 服务。新电脑首次启动为空列表，添加或导入自己的主机即可；已使用本程序的电脑继续读取原有配置。发行包不带开发者的主机、密码或快照。详细说明见 [RELEASE_GUIDE.md](RELEASE_GUIDE.md)。
+Windows 10/11 x64 请到 [GitHub Releases](https://github.com/TheBlueBanisters/GPU-Checker/releases/latest) 下载 `GPUChecker-v14.0.1-Windows-x64.zip`，解压后双击 `GPUChecker.exe`。不需要安装 Python、Qt 或 AI 服务。新电脑首次启动为空列表，添加或导入自己的主机即可；已使用本程序的电脑继续读取原有配置。发行包不带开发者的主机、密码或快照。详细说明见 [RELEASE_GUIDE.md](RELEASE_GUIDE.md)。
 
 ## 快速开始
 
@@ -48,7 +48,7 @@ OpenSSH 模式用原生 `ssh -F` 读取导入副本，支持 OpenSSH 自身的 I
 
 ## 配置与路径
 
-- 默认配置目录：当前用户的 `%LOCALAPPDATA%/GPUChecker`，由系统环境动态定位。exe 放在只读目录也能使用。
+- 默认配置目录：当前用户的 `%USERPROFILE%/.gpu-checker`，由系统环境动态定位。exe 放在只读目录也能使用。
 - 便携模式：退出程序，在 exe 旁创建空文件 `portable.flag`，下次启动会使用旁边的 `data/`。随 exe 移动 data 文件夹即可。也可把本目录的 `portable.flag.example` 复制并改名为 `portable.flag`。默认配置不会自动搬过去；可以先导出再导入。
 - 连接面板里的私钥支持 `~/.ssh/id_ed25519`、环境变量、绝对路径或相对于 exe 的路径，例如 `keys/id_ed25519`。程序选中当前用户目录内的私钥时优先保存为 `~/...`。
 - SSH config 文件内的相对路径由 OpenSSH 解释，**不等同于相对于 exe**。跨电脑优先使用 `~/.ssh/...`。外部 Include、ProxyCommand 依赖和自定义绝对路径需要一并迁移或改写。
@@ -164,3 +164,7 @@ GPU 卡片状态为：绿色空闲、蓝色可用、琥珀占用、红色不可�
 历史画面明确标注采样日期／时间和非实时状态，历史空闲／可用结果不会沿用。所有数值、曲线、进程记录保持最后一次成功样本；重新连接拿到新数据后恢复实时更新。缓存以主机 ID 和实际 SSH 端点／账号绑定，修改端点不会加载另一台主机的旧快照。缓存损坏可忽略，写入失败不打断实时监控；主动移除主机时清理对应缓存。密码、私钥、环境变量不进入快照；本机快照不会打包或上传 GitHub。便携迁移复制完整 data/，含 snapshots/。
 
 主机卡片宽度约束到列表可见区域内，保留完整右边框和既有滚动条间隔。
+
+## 14.0.1 存储根因修复
+
+修复 MSIX AppData 重定向造成工具环境与桌面启动读写不同主机列表的问题。默认目录改为 `%USERPROFILE%\.gpu-checker`，首次自动合并旧普通目录与包缓存登记，保留 ID、暂停设置及快照，原文件不删除。诊断与回归证据见 [STORAGE_FIX.md](STORAGE_FIX.md)。

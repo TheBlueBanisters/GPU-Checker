@@ -1,5 +1,7 @@
 from themes import set_style
 import themes
+import storage
+from version import APP_VERSION
 from host_list import HostList
 import json
 from pathlib import Path
@@ -47,7 +49,7 @@ class Window(QMainWindow):
 
     def __init__(self,autostart=True,session_factory=HostSession):
         super().__init__()
-        self.setWindowTitle('GPU Checker · 多主机算力监控')
+        self.setWindowTitle(f'GPU Checker {APP_VERSION} · 多主机算力监控')
         self.setWindowIcon(QIcon(str(ASSETS/'app.ico')))
         self.setWindowFlags(Qt.WindowType.Window|Qt.WindowType.FramelessWindowHint|Qt.WindowType.WindowMinMaxButtonsHint|Qt.WindowType.WindowCloseButtonHint|Qt.WindowType.WindowSystemMenuHint)
         self.resize_handles=[]
@@ -571,8 +573,10 @@ class Window(QMainWindow):
     def write_runtime_state(self):
         try:
             profiles.atomic_json(DATA/'runtime_state.json',{
-                'version':'v14','pid':__import__('os').getpid(),
+                'version':APP_VERSION,'pid':__import__('os').getpid(),
                 'exe':sys.executable,'app_data':str(DATA),'profile_data':str(profiles.DATA),
+                'physical_profile_file':str(storage.physical_path(profiles.DATA/'profiles.json')),
+                'legacy_storage_views':storage.legacy_summary(),
                 'loaded_count':len(self.items),'session_count':len(self.sessions),
                 'visible_row_count':self.host_list.count(),'load_error':self.load_error,
                 'historical_snapshots':sum(s.historical for s in self.sessions.values()),
@@ -836,7 +840,7 @@ class Window(QMainWindow):
                 control.update()
 
     def help(self):
-        self.notify('GPU Checker v14 使用说明','左侧主机在后台持续采集，点击只切换右侧视图。暂停某台或全部暂停会保存状态，下次启动仍暂停；恢复后重新启用自动连接。正常关闭窗口不会改变暂停设置。\n\n编辑主机可勾选记住服务器密码，存入当前 Windows 用户的凭据管理器。程序启动时可自动取用；暂停不会删除已保存密码。取消勾选并保存可删除凭据。换电脑需重新输入。私钥口令仍仅保留在会话内存。\n\n无 GPU 主机显示在线并继续保活；驱动不可用与无设备分别显示。不提权，不控制用卡进程，不读取环境或完整命令行。\n\nOpenSSH 模式支持系统 config、Agent 和跳板机；内置密码模式仅直连。新主机需核对指纹，已有密钥变化拒绝连接。\n\n远端要求 Linux 与 Python 3.6+；GPU 遥测另需 NVIDIA 驱动和 nvidia-smi。\n\n配置位置：'+str(DATA)+'\n主机条目：'+str(len(self.items))+'；列表：'+str(self.host_list.count())+'\n主机读取位置：'+str(profiles.DATA)+'\nexe 旁放 portable.flag 可启用 data/ 便携模式。密码不进入 JSON、config 或迁移包，私钥请独立保管。')
+        self.notify(f'GPU Checker {APP_VERSION} 使用说明','左侧主机在后台持续采集，点击只切换右侧视图。暂停某台或全部暂停会保存状态，下次启动仍暂停；恢复后重新启用自动连接。正常关闭窗口不会改变暂停设置。\n\n编辑主机可勾选记住服务器密码，存入当前 Windows 用户的凭据管理器。程序启动时可自动取用；暂停不会删除已保存密码。取消勾选并保存可删除凭据。换电脑需重新输入。私钥口令仍仅保留在会话内存。\n\n无 GPU 主机显示在线并继续保活；驱动不可用与无设备分别显示。不提权，不控制用卡进程，不读取环境或完整命令行。\n\nOpenSSH 模式支持系统 config、Agent 和跳板机；内置密码模式仅直连。新主机需核对指纹，已有密钥变化拒绝连接。\n\n远端要求 Linux 与 Python 3.6+；GPU 遥测另需 NVIDIA 驱动和 nvidia-smi。\n\n配置位置：'+str(DATA)+'\n主机条目：'+str(len(self.items))+'；列表：'+str(self.host_list.count())+'\n主机读取位置：'+str(profiles.DATA)+'\nexe 旁放 portable.flag 可启用 data/ 便携模式。密码不进入 JSON、config 或迁移包，私钥请独立保管。')
 
     def closeEvent(self,event):
         self.closing=True
@@ -884,8 +888,15 @@ def main():
     except RuntimeError as exc:
         QMessageBox.warning(None,'GPU Checker',str(exc))
         return 1
-    window=Window()
+    storage_test='--storage-self-test' in sys.argv
+    window=Window(autostart=not storage_test)
     app.instance_guard.window=window
+    if storage_test:
+        window.write_runtime_state()
+        window.close()
+        app.instance_guard.server.close()
+        app.instance_guard.lock.unlock()
+        return 0
     window.show()
     return app.exec()
 
