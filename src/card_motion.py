@@ -2,7 +2,7 @@
 import math
 import time
 from PySide6.QtCore import QPointF,QRectF,QTimer,QEvent,Qt
-from PySide6.QtGui import QColor,QPen,QPainterPath,QRadialGradient
+from PySide6.QtGui import QColor,QPen,QPainterPath,QRadialGradient,QLinearGradient
 from themes import color as themed,is_day
 
 
@@ -19,6 +19,16 @@ def cylinder_state(phase,index):
     # Ignition begins just before compression TDC; fades on the power downstroke.
     burn=smooth((relative+.22)/.32)*(1-smooth((relative-.10)/.95))
     return crank_x,crank_y,piston_y,burn
+
+
+def combustion_stages(phase,index):
+    angle=(phase*4*math.pi+(0,math.pi,3*math.pi,2*math.pi)[index])%(4*math.pi)
+    relative=angle-4*math.pi if angle>3*math.pi else angle
+    spark=math.exp(-((relative+.12)/.09)**2) if -.4<relative<.12 else 0
+    burn=cylinder_state(phase,index)[3]
+    afterglow=(math.sin(math.pi*(relative-.25)/2)**2*.28 if .25<relative<2.25 else 0)
+    front=max(0,min(1,(relative+.22)/1.27))
+    return spark,max(burn,afterglow),front
 
 
 class CardMotion:
@@ -46,6 +56,8 @@ class CardMotion:
             self.owner.installEventFilter(w)
         moving=self.state in ('busy','available','idle') or (
             self.state in ('blocked','disconnected') and time.monotonic()-self.transition<1.6)
+        interval=20 if self.state=='busy' else 50
+        if self.timer.interval()!=interval: self.timer.setInterval(interval)
         if w.isVisible() and not w.window().isMinimized() and moving:
             if not self.timer.isActive():
                 self.stamp=time.monotonic()
@@ -55,7 +67,7 @@ class CardMotion:
 
     def frame(self):
         now=time.monotonic()
-        speed={'busy':.9,'available':.16,'idle':.055}.get(self.state,0)
+        speed={'busy':.7,'available':.16,'idle':.055}.get(self.state,0)
         self.phase=(self.phase+min(now-self.stamp,.15)*speed)%1
         self.stamp=now
         self.sync()
@@ -88,17 +100,53 @@ class CardMotion:
             p.drawRoundedRect(QRectF(x-10,10,20,62),2,2)
             p.drawLine(QPointF(x-7,7),QPointF(x-7,0))
             p.drawLine(QPointF(x+7,7),QPointF(x+7,0))
-            # Soft combustion plume, with no flashing full-card fill.
-            ignition=burn if busy else 0
-            glow=QRadialGradient(QPointF(x,20),18)
-            flame=QColor(tint);flame.setAlpha(round(55*ignition))
-            glow.setColorAt(0,flame);flame.setAlpha(0);glow.setColorAt(1,flame)
-            p.fillRect(QRectF(x-9,11,18,max(1,piston_y-13)),glow)
+            # Spark -> expanding flame front -> warm residual gas, all clipped
+            # above the moving piston crown. No one-frame explosion or flat flash.
+            spark,heat,front=combustion_stages(self.phase,i) if busy else (0,0,0)
+            p.save()
+            chamber=QRectF(x-8.4,11,16.8,max(1,piston_y-15))
+            p.setClipRect(chamber,Qt.ClipOperation.IntersectClip)
+            hot=QColor('#a95a1d' if is_day() else '#ffc278')
+            orange=QColor('#b46b20' if is_day() else '#eb8b42')
+            core=QColor('#8d4915' if is_day() else '#fff0c0')
+            if heat>.001:
+                gas=QLinearGradient(x,12,x,piston_y-4)
+                cap=QColor(orange);cap.setAlpha(round(heat*40))
+                gas.setColorAt(0,cap)
+                cap.setAlpha(round(heat*13));gas.setColorAt(1,cap)
+                p.fillRect(chamber,gas)
+                centre=QPointF(x,17+chamber.height()*.48*front)
+                flame=QRadialGradient(centre,3+21*front)
+                for stop,color,alpha in ((0,core,95),(.27,hot,85),(.62,orange,43),(1,orange,0)):
+                    ink=QColor(color);ink.setAlpha(round(alpha*heat));flame.setColorAt(stop,ink)
+                p.fillRect(chamber,flame)
+                # Curved flame filaments travel down with expansion, then fade.
+                filament=QColor(hot);filament.setAlpha(round(heat*65*(1-front*.65)))
+                p.setPen(QPen(filament,.7));p.setBrush(Qt.BrushStyle.NoBrush)
+                for lane in (-1,0,1):
+                    y=min(piston_y-5,17+front*chamber.height()*.82)
+                    curve=QPainterPath(QPointF(x+lane*1.8,16))
+                    curve.cubicTo(x+lane*5,19+front*7,x+lane*6.4,y-6,x+lane*3.8,y)
+                    p.drawPath(curve)
+            if spark>.005:
+                flash=QRadialGradient(QPointF(x,15),4.5)
+                ink=QColor(core);ink.setAlpha(round(150*spark));flash.setColorAt(0,ink)
+                ink.setAlpha(0);flash.setColorAt(1,ink);p.fillRect(chamber,flash)
+                ink=QColor(core);ink.setAlpha(round(200*spark));p.setPen(QPen(ink,.8))
+                bolt=QPainterPath(QPointF(x-1.8,12));bolt.lineTo(x+.9,14);bolt.lineTo(x-.8,15.4);bolt.lineTo(x+1.6,17.2);p.drawPath(bolt)
+            p.restore()
+            # Small spark-plug silhouette stays visible between firing events.
+            p.setPen(QPen(tint,.9));p.drawLine(QPointF(x,5),QPointF(x,13))
+            p.drawLine(QPointF(x-2,8),QPointF(x+2,8))
             piston=QColor(tint);piston.setAlpha(40 if busy else 15)
             p.setBrush(piston)
             p.drawRoundedRect(QRectF(x-9,piston_y-4,18,8),1,1)
             p.setBrush(Qt.BrushStyle.NoBrush)
             p.drawLine(QPointF(x-8,piston_y-1),QPointF(x+8,piston_y-1))
+            if heat>.01:
+                rim=QColor(hot);rim.setAlpha(round(heat*72));p.setPen(QPen(rim,1.1))
+                p.drawLine(QPointF(x-8,piston_y-4),QPointF(x+8,piston_y-4))
+                p.setPen(QPen(tint,1.1))
             p.drawLine(QPointF(x,piston_y+4),crank)
             p.drawEllipse(QPointF(x,94),10,10)
             p.drawEllipse(crank,2,2)

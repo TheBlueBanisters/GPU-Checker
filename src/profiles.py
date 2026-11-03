@@ -1,5 +1,6 @@
 """Connection metadata only: passwords and private keys are never exported."""
 import json
+import tempfile
 from pathlib import Path
 import re
 import shutil
@@ -29,19 +30,56 @@ def clean(profile):
     return result
 
 
-def save(items):
-    DATA.mkdir(parents=True, exist_ok=True)
-    target = DATA / "profiles.json"
-    tmp = target.with_suffix(".tmp")
-    tmp.write_text(json.dumps([clean(p) for p in items], ensure_ascii=False, indent=2), encoding="utf-8")
-    tmp.replace(target)
+def atomic_json(path,value):
+    path.parent.mkdir(parents=True,exist_ok=True)
+    with tempfile.NamedTemporaryFile(mode='w',encoding='utf-8',dir=path.parent,suffix='.tmp',delete=False) as stream:
+        temporary=Path(stream.name)
+        json.dump(value,stream,ensure_ascii=False,indent=2)
+    try:
+        temporary.replace(path)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
+def catalog():
+    path=DATA/'host_catalog.json'
+    if not path.exists():
+        return {'hosts':[],'removed':[]}
+    value=json.loads(path.read_text(encoding='utf-8'))
+    return {'hosts':[clean(p) for p in value['hosts']],'removed':[str(k) for k in value.get('removed',[])]}
+
+
+def save(items,removed_ids=()):
+    # Only explicit UI removal can erase an enrolled host. Legacy versions may
+    # rewrite profiles.json, but cannot erase the independent enrollment catalog.
+    registry=catalog()
+    removed=set(registry['removed'])|set(removed_ids)
+    incoming=[clean(p) for p in items]
+    by_id={p['id']:p for p in incoming if p['id'] not in removed}
+    for p in registry['hosts']:
+        if p['id'] not in removed:
+            by_id.setdefault(p['id'],p)
+    merged=list(by_id.values())
+    atomic_json(DATA/'host_catalog.json',{'hosts':merged,'removed':sorted(removed)})
+    atomic_json(DATA/'profiles.json',merged)
+    return merged
 
 
 def load():
-    target = DATA / "profiles.json"
+    target=DATA/'profiles.json'
+    registry=catalog()
     if target.exists():
-        return [clean(p) for p in json.loads(target.read_text(encoding="utf-8"))]
-    return [clean({"name": "null-sf.top", "host": "null-sf.top"})]
+        items=[clean(p) for p in json.loads(target.read_text(encoding='utf-8'))]
+    elif registry['hosts'] or registry['removed']:
+        items=[]
+    else:
+        return [clean({'name':'null-sf.top','host':'null-sf.top'})]
+    removed=set(registry['removed'])
+    by_id={p['id']:p for p in items if p['id'] not in removed}
+    for p in registry['hosts']:
+        if p['id'] not in removed:
+            by_id.setdefault(p['id'],p)
+    return list(by_id.values())
 
 
 def aliases(source=None):

@@ -125,9 +125,12 @@ class Window(QMainWindow):
         self.host_search.textChanged.connect(self.filter_hosts)
         sb.addWidget(self.host_search)
         self.host_list=HostList()
+        self.host_list.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOn)
         self.host_list.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.host_list.currentRowChanged.connect(self.select_row)
         sb.addWidget(self.host_list,1)
+        self.fleet_hint=label('滚动查看全部主机 · 暂停仍保留','eyebrow')
+        sb.addWidget(self.fleet_hint)
         sb.addWidget(self.button('+ 添加主机',self.add_host,True))
         sb.addWidget(self.button('导入 SSH config',self.import_ssh))
         sb.addWidget(self.button('粘贴 / 编辑 config',self.edit_config))
@@ -603,14 +606,14 @@ class Window(QMainWindow):
         self.profile_stamp=self.profiles_stamp()
         self.rebuild_list()
 
-    def save_items(self,items):
+    def save_items(self,items,removed_ids=()):
         try:
             # A stale window must preserve hosts added by another running version.
             known=set(self.sessions)
             supplied={p['id'] for p in items}
-            added=[p for p in profiles.load() if p['id'] not in known and p['id'] not in supplied]
+            added=[p for p in profiles.load() if p['id'] not in known and p['id'] not in supplied and p['id'] not in removed_ids]
             items=items+added
-            profiles.save(items)
+            items=profiles.save(items,removed_ids=removed_ids)
             for p in added:
                 session=self.register(p)
                 if p['autoconnect'] and self.automatic_start: session.start()
@@ -670,7 +673,7 @@ class Window(QMainWindow):
         s=self.selected
         if not s:
             return
-        if not self.save_items([p for p in self.items if p['id']!=s.id]):
+        if not self.save_items([p for p in self.items if p['id']!=s.id],removed_ids={s.id}):
             return
         s.stop()
         if s.running:
@@ -803,7 +806,7 @@ class Window(QMainWindow):
                 control.update()
 
     def help(self):
-        self.notify('GPU Checker v10 使用说明','左侧主机在后台持续采集，点击只切换右侧视图。暂停某台或全部暂停会保存状态，下次启动仍暂停；恢复后重新启用自动连接。正常关闭窗口不会改变暂停设置。\n\n编辑主机可勾选记住服务器密码，存入当前 Windows 用户的凭据管理器。程序启动时可自动取用；暂停不会删除已保存密码。取消勾选并保存可删除凭据。换电脑需重新输入。私钥口令仍仅保留在会话内存。\n\n无 GPU 主机显示在线并继续保活；驱动不可用与无设备分别显示。不提权，不控制用卡进程，不读取环境或完整命令行。\n\nOpenSSH 模式支持系统 config、Agent 和跳板机；内置密码模式仅直连。新主机需核对指纹，已有密钥变化拒绝连接。\n\n远端要求 Linux 与 Python 3.6+；GPU 遥测另需 NVIDIA 驱动和 nvidia-smi。\n\n配置位置：'+str(DATA)+'\nexe 旁放 portable.flag 可启用 data/ 便携模式。密码不进入 JSON、config 或迁移包，私钥请独立保管。')
+        self.notify('GPU Checker v11 使用说明','左侧主机在后台持续采集，点击只切换右侧视图。暂停某台或全部暂停会保存状态，下次启动仍暂停；恢复后重新启用自动连接。正常关闭窗口不会改变暂停设置。\n\n编辑主机可勾选记住服务器密码，存入当前 Windows 用户的凭据管理器。程序启动时可自动取用；暂停不会删除已保存密码。取消勾选并保存可删除凭据。换电脑需重新输入。私钥口令仍仅保留在会话内存。\n\n无 GPU 主机显示在线并继续保活；驱动不可用与无设备分别显示。不提权，不控制用卡进程，不读取环境或完整命令行。\n\nOpenSSH 模式支持系统 config、Agent 和跳板机；内置密码模式仅直连。新主机需核对指纹，已有密钥变化拒绝连接。\n\n远端要求 Linux 与 Python 3.6+；GPU 遥测另需 NVIDIA 驱动和 nvidia-smi。\n\n配置位置：'+str(DATA)+'\nexe 旁放 portable.flag 可启用 data/ 便携模式。密码不进入 JSON、config 或迁移包，私钥请独立保管。')
 
     def closeEvent(self,event):
         self.closing=True
@@ -843,7 +846,15 @@ def configure_app(app):
 def main():
     app=QApplication(sys.argv)
     configure_app(app)
+    from instance_guard import InstanceGuard
+    app.instance_guard=InstanceGuard(DATA,app)
+    try:
+        if not app.instance_guard.claim(): return 0
+    except RuntimeError as exc:
+        QMessageBox.warning(None,'GPU Checker',str(exc))
+        return 1
     window=Window()
+    app.instance_guard.window=window
     window.show()
     return app.exec()
 
