@@ -49,6 +49,35 @@ def test_host_actions_equal_and_process_count_separate(window):
     assert w.badge.height()==26
 
 
+def test_panel_feedback_on_child_labels_is_cosmetic_and_finishes(window):
+    from PySide6.QtCore import QAbstractAnimation
+    w=window
+    w.show()
+    w.connect_all()
+    s=w.selected
+    s.worker.data.emit(snapshot(1))
+    QApplication.processEvents()
+    gpu=next(iter(w.cards.values()))
+    before_worker=s.worker
+    before_samples=s.sample_count
+    QTest.mouseMove(gpu.metric_label,QPoint(15,10))
+    QTest.qWait(200)
+    assert gpu.hover_amount>.9
+    QTest.mouseClick(gpu.metric_label,Qt.MouseButton.LeftButton,pos=QPoint(15,10))
+    QTest.qWait(80)
+    assert 0<gpu.click_progress<1
+    assert s.worker is before_worker and s.sample_count==before_samples and s.desired
+    QTest.qWait(650)
+    assert gpu.click_animation.state()==QAbstractAnimation.State.Stopped
+    assert gpu.click_progress==1.
+    summary=w.stats[0].parentWidget()
+    QTest.mouseClick(w.stats[0],Qt.MouseButton.LeftButton,pos=QPoint(5,5))
+    QTest.qWait(40)
+    assert summary.click_progress<1 and s.worker is before_worker
+    summary.hide()
+    assert summary.click_animation.state()==QAbstractAnimation.State.Stopped
+
+
 def test_password_pause_resumes_without_edit_dialog(window,monkeypatch):
     import profiles,vault
     s=window.selected

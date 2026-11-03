@@ -1,5 +1,5 @@
 from pathlib import Path
-from PySide6.QtCore import Qt,QRectF,QPointF,QVariantAnimation,QSize
+from PySide6.QtCore import Qt,QRectF,QPointF,QVariantAnimation,QSize,QEvent,QEasingCurve
 from PySide6.QtGui import QColor, QPainter, QPainterPath, QPen, QLinearGradient, QRadialGradient,QFont
 from PySide6.QtWidgets import QWidget, QFrame, QLabel, QVBoxLayout, QHBoxLayout, QProgressBar,QPushButton,QSizePolicy
 
@@ -59,6 +59,102 @@ def notch_path(rect,cut=9):
 
 
 class MechPanel(QFrame):
+    def __init__(self,parent=None):
+        super().__init__(parent)
+        self.feedback_enabled=False
+        self.hover_amount=0.
+        self.click_progress=1.
+        self.feedback_point=QPointF(30,30)
+        self.click_origin=QPointF(30,30)
+        self.hover_animation=QVariantAnimation(self)
+        self.hover_animation.setDuration(160)
+        self.hover_animation.setEasingCurve(QEasingCurve.Type.OutCubic)
+        self.hover_animation.valueChanged.connect(self._hover_frame)
+        self.click_animation=QVariantAnimation(self)
+        self.click_animation.setDuration(620)
+        self.click_animation.setStartValue(0.)
+        self.click_animation.setEndValue(1.)
+        self.click_animation.setEasingCurve(QEasingCurve.Type.OutCubic)
+        self.click_animation.valueChanged.connect(self._click_frame)
+
+    def enable_feedback(self):
+        self.feedback_enabled=True
+        self.setMouseTracking(True)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        # Passive labels/charts must forward feedback without losing their tooltips.
+        for child in self.findChildren(QWidget):
+            child.setMouseTracking(True)
+            child.installEventFilter(self)
+
+    def _hover_frame(self,value):
+        self.hover_amount=float(value)
+        self.update()
+
+    def _click_frame(self,value):
+        self.click_progress=float(value)
+        self.update()
+
+    def _hover_to(self,end):
+        if abs(self.hover_amount-end)<.001 and self.hover_animation.state()!=QVariantAnimation.State.Running:
+            return
+        if self.hover_animation.endValue()==end and self.hover_animation.state()==QVariantAnimation.State.Running:
+            return
+        self.hover_animation.stop()
+        self.hover_animation.setStartValue(self.hover_amount)
+        self.hover_animation.setEndValue(end)
+        self.hover_animation.start()
+
+    def pulse_at(self,point):
+        if not self.feedback_enabled:
+            return
+        self.feedback_point=QPointF(point)
+        self.click_origin=QPointF(point)
+        self.click_animation.stop()
+        self.click_progress=0.
+        self.click_animation.start()
+        self.update()
+
+    def eventFilter(self,watched,event):
+        if self.feedback_enabled:
+            if event.type()==QEvent.Type.MouseMove:
+                self.feedback_point=QPointF(watched.mapTo(self,event.position().toPoint()))
+                self._hover_to(1.)
+                self.update()
+            elif event.type()==QEvent.Type.MouseButtonPress and event.button()==Qt.MouseButton.LeftButton:
+                self.pulse_at(watched.mapTo(self,event.position().toPoint()))
+                return True
+        return super().eventFilter(watched,event)
+
+    def enterEvent(self,event):
+        if self.feedback_enabled:
+            self._hover_to(1.)
+        super().enterEvent(event)
+
+    def leaveEvent(self,event):
+        if self.feedback_enabled:
+            self._hover_to(0.)
+        super().leaveEvent(event)
+
+    def mouseMoveEvent(self,event):
+        if self.feedback_enabled:
+            self.feedback_point=event.position()
+            self.update()
+        super().mouseMoveEvent(event)
+
+    def mousePressEvent(self,event):
+        if self.feedback_enabled and event.button()==Qt.MouseButton.LeftButton:
+            self.pulse_at(event.position())
+            event.accept()
+        else:
+            super().mousePressEvent(event)
+
+    def hideEvent(self,event):
+        self.hover_animation.stop()
+        self.click_animation.stop()
+        self.hover_amount=0.
+        self.click_progress=1.
+        super().hideEvent(event)
+
     def paintEvent(self,event):
         p=QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
@@ -77,6 +173,36 @@ class MechPanel(QFrame):
         p.drawLine(QPointF(self.width()-1,self.height()-1),QPointF(self.width()-24,self.height()-1))
         if selected:
             p.drawLine(QPointF(1,13),QPointF(1,self.height()-16))
+        if self.feedback_enabled and (self.hover_amount>0 or self.click_progress<1):
+            outline=notch_path(rect,10)
+            p.setClipPath(outline)
+            if self.hover_amount>0:
+                glow=QRadialGradient(self.feedback_point,max(self.width(),self.height())*.85)
+                glow.setColorAt(0,QColor(60,205,210,int(43*self.hover_amount)))
+                glow.setColorAt(1,QColor(30,130,180,0))
+                p.fillPath(outline,glow)
+                p.setBrush(Qt.BrushStyle.NoBrush)
+                p.setPen(QPen(QColor(97,239,220,int(175*self.hover_amount)),1.6))
+                p.drawPath(outline)
+                p.setPen(QPen(QColor(102,255,227,int(90*self.hover_amount)),4))
+                p.drawLine(QPointF(1,1),QPointF(min(72,self.width()/2),1))
+            if self.click_progress<1:
+                t=self.click_progress
+                radius=max(2,(self.width()**2+self.height()**2)**.5*t)
+                glow=QRadialGradient(self.click_origin,radius)
+                glow.setColorAt(0,QColor(70,240,215,int(42*(1-t))))
+                glow.setColorAt(.8,QColor(70,220,230,int(27*(1-t))))
+                glow.setColorAt(1,QColor(70,220,230,0))
+                p.fillPath(outline,glow)
+                p.setBrush(Qt.BrushStyle.NoBrush)
+                p.setPen(QPen(QColor(115,255,230,int(155*(1-t))),1.8))
+                p.drawEllipse(self.click_origin,radius,radius)
+                scan_x=(self.width()+50)*t-25
+                scan=QLinearGradient(scan_x-22,0,scan_x+22,0)
+                scan.setColorAt(0,QColor(83,239,224,0))
+                scan.setColorAt(.5,QColor(83,239,224,int(56*(1-t))))
+                scan.setColorAt(1,QColor(83,239,224,0))
+                p.fillRect(QRectF(scan_x-22,0,44,self.height()),scan)
 
 
 class ModernButton(QPushButton):
@@ -272,6 +398,7 @@ class GPUCard(MechPanel):
         for widget in (self.title,self.name,self.metric_label,self.spark,self.memory,self.bar,self.thermal):
             box.addWidget(widget)
         self.update_data(gpu,history)
+        self.enable_feedback()
 
     def update_data(self,g,history):
         self.title.setText(f"GPU {g['index']:02d}  /  {g['state']}")

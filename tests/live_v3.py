@@ -3,7 +3,8 @@ import sys,json,tempfile,shutil
 from pathlib import Path
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'src'))
 from PySide6.QtWidgets import QApplication
-from PySide6.QtCore import QTimer
+from PySide6.QtCore import QTimer,QPoint,QRect,Qt
+from PySide6.QtTest import QTest
 import app as ui
 import profiles,backend
 from dialogs import HostDialog,ConfigDialog
@@ -44,6 +45,26 @@ def check():
         w.host_list.setCurrentRow(0)
         application.processEvents()
         w.grab().save(str(out/'preview.png'))
+        if '--feedback-demo' in sys.argv:
+            frames=out.parent/'build/feedback-frames'
+            frames.mkdir(parents=True,exist_ok=True)
+            top=w.stats[0].parentWidget().mapTo(w,QPoint(0,0))
+            bottom=w.card_scroll.mapTo(w,QPoint(w.card_scroll.width(),w.card_scroll.height()))
+            region=QRect(top,bottom)
+            index=[0]
+            def capture(count):
+                for _ in range(count):
+                    QTest.qWait(40)
+                    shot=w.grab(region).scaledToWidth(1100,Qt.TransformationMode.SmoothTransformation)
+                    shot.save(str(frames/f'frame-{index[0]:03d}.png'))
+                    index[0]+=1
+            capture(8)
+            QTest.mouseMove(w.stats[0],QPoint(20,10));capture(6)
+            QTest.mouseClick(w.stats[0],Qt.MouseButton.LeftButton,pos=QPoint(20,10));capture(16)
+            gpu=next(iter(w.cards.values()))
+            QTest.mouseMove(gpu.metric_label,QPoint(30,15));capture(6)
+            QTest.mouseClick(gpu.metric_label,Qt.MouseButton.LeftButton,pos=QPoint(30,15));capture(16)
+            QTest.mouseMove(w.heading,QPoint(10,10));capture(8)
         d=HostDialog(w,cpu.profile)
         d.show();application.processEvents();d.grab().save(str(out/'host-editor.png'));d.close()
         c=ConfigDialog(w)
