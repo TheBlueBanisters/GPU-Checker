@@ -15,7 +15,9 @@ from dialogs import HostDialog,ConfigDialog
 from visuals import STYLE,Backdrop,GPUCard,HostTile,ModernButton,StatusIndicator,MechPanel,label,fmt
 import profiles
 import vault
-from process_table import ProcessHeader,ProcessCells,ALIGNMENTS
+from process_table import ProcessHeader,ProcessCells,ProcessTable,ALIGNMENTS
+from availability import Rules,Tracker,COLORS,LABELS
+from dialogs import AvailabilityDialog
 from window_chrome import TitleBar,install_handles,layout_handles
 
 ASSETS=Path(getattr(sys,'_MEIPASS',Path(__file__).parent.parent))/'assets'
@@ -31,6 +33,15 @@ class Window(QMainWindow):
         self.resize(1480,1000)
         self.setMinimumSize(1080,760)
         self.session_factory=session_factory
+        try:
+            self.availability_rules=Rules(**json.loads((DATA/'availability_rules.json').read_text(encoding='utf-8')))
+        except Exception:
+            self.availability_rules=Rules()
+        try:
+            self.inventory_hints=json.loads((DATA/'inventory_hints.json').read_text(encoding='utf-8'))
+            self.inventory_hints={str(k):v for k,v in self.inventory_hints.items() if v in ('available','no_gpu','unavailable')}
+        except Exception:
+            self.inventory_hints={}
         self.sessions={}
         self.retired=[]
         self.tiles={}
@@ -162,7 +173,17 @@ class Window(QMainWindow):
         row=QHBoxLayout()
         row.addWidget(label('GPU 遥测','section'))
         row.addStretch()
-        row.addWidget(label('60 SAMPLES  /  UTILIZATION','eyebrow'))
+        self.availability_legend=QWidget()
+        legend=QHBoxLayout(self.availability_legend)
+        legend.setContentsMargins(0,0,0,0)
+        legend.setSpacing(12)
+        for state in ('idle','available','busy','blocked','unknown'):
+            entry=label('◆ '+LABELS[state])
+            entry.setStyleSheet(f'font-size:13px;color:{COLORS[state]}')
+            legend.addWidget(entry)
+        self.availability_legend.setToolTip('绿：空闲；蓝：可用；琥珀：占用；红：不可用；灰：未知／观察中。可用包含空闲。')
+        row.addWidget(self.availability_legend)
+        row.addWidget(self.button('判定规则',self.edit_availability_rules))
         content.addLayout(row)
         self.card_scroll=QScrollArea()
         self.card_scroll.setWidgetResizable(True)
@@ -191,7 +212,7 @@ class Window(QMainWindow):
         self.search.textChanged.connect(self.render_processes)
         row.addWidget(self.search)
         content.addLayout(row)
-        self.table=QTableWidget(0,8)
+        self.table=ProcessTable(0,8)
         self.table.setHorizontalHeaderLabels(['GPU','PID','用户','类型','显存 MiB','进程','当前工作目录','父 PID'])
         self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
@@ -250,6 +271,8 @@ class Window(QMainWindow):
 
     def register(self,p):
         session=self.session_factory(p,self)
+        session.availability_tracker=Tracker(self.availability_rules)
+        session.gpu_hint=self.inventory_hints.get(session.id)
         self.sessions[session.id]=session
         session.changed.connect(self.host_changed)
         session.sampled.connect(self.host_sampled)
@@ -270,9 +293,9 @@ class Window(QMainWindow):
         for index,p in enumerate(self.items):
             item=QListWidgetItem()
             item.setData(Qt.ItemDataRole.UserRole,p['id'])
-            item.setSizeHint(QSize(230,126))
+            item.setSizeHint(QSize(230,134))
             self.host_list.addItem(item)
-            tile=HostTile(self.sessions[p['id']])
+            tile=HostTile(self.sessions[p['id']],index)
             self.host_list.setItemWidget(item,tile)
             self.tiles[p['id']]=tile
             if p['id']==selected:
@@ -317,10 +340,47 @@ class Window(QMainWindow):
         self.update_fleet()
         if sid==self.selected_id:
             self.render_status()
+            self.update_availability_badges()
 
     def host_sampled(self,sid):
+        session=self.sessions.get(sid)
+        if session and session.gpu_hint in ('available','no_gpu','unavailable') and self.inventory_hints.get(sid)!=session.gpu_hint:
+            self.inventory_hints[sid]=session.gpu_hint
+            try:
+                DATA.mkdir(parents=True,exist_ok=True)
+                target=DATA/'inventory_hints.json'
+                temporary=target.with_suffix('.tmp')
+                temporary.write_text(json.dumps(self.inventory_hints),encoding='utf-8')
+                temporary.replace(target)
+            except OSError:
+                pass  # Inventory tint is optional; never disturb monitoring on a cache failure.
         if sid==self.selected_id:
             self.render_selected()
+
+    def update_availability_badges(self):
+        if self.selected:
+            for uuid,card in self.cards.items():
+                card.set_availability(self.selected.gpu_availability(uuid))
+
+    def edit_availability_rules(self):
+        dialog=AvailabilityDialog(self,self.availability_rules)
+        if dialog.exec()!=QDialog.DialogCode.Accepted:
+            return
+        rules=dialog.rules()
+        try:
+            DATA.mkdir(parents=True,exist_ok=True)
+            target=DATA/'availability_rules.json'
+            temporary=target.with_suffix('.tmp')
+            temporary.write_text(json.dumps(rules.as_dict(),indent=2),encoding='utf-8')
+            temporary.replace(target)
+        except OSError as exc:
+            self.notify('无法保存规则',str(exc))
+            return
+        self.availability_rules=rules
+        for session in self.sessions.values():
+            session.availability_tracker=Tracker(rules)
+            session.gpu_states={}
+            self.host_changed(session.id)
 
     def render_status(self):
         session=self.selected
@@ -370,11 +430,11 @@ class Window(QMainWindow):
             for g in gs:
                 history=session.history.get(g['uuid'],())
                 if g['uuid'] not in self.cards:
-                    card=GPUCard(g,history)
+                    card=GPUCard(g,history,session.gpu_availability(g['uuid']))
                     self.cards[g['uuid']]=card
                     self.card_layout.insertWidget(self.card_layout.count()-1,card)
                 else:
-                    self.cards[g['uuid']].update_data(g,history)
+                    self.cards[g['uuid']].update_data(g,history,session.gpu_availability(g['uuid']))
             utils=[g['util'] for g in gs if g['util'] is not None]
             used=sum(g['used'] or 0 for g in gs)/1024
             total=sum(g['total'] or 0 for g in gs)/1024
@@ -666,7 +726,7 @@ class Window(QMainWindow):
                 control.update()
 
     def help(self):
-        self.notify('GPU Checker v6 使用说明','左侧主机在后台持续采集，点击只切换右侧视图。暂停某台或全部暂停会保存状态，下次启动仍暂停；恢复后重新启用自动连接。正常关闭窗口不会改变暂停设置。\n\n编辑主机可勾选记住服务器密码，存入当前 Windows 用户的凭据管理器。程序启动时可自动取用；暂停不会删除已保存密码。取消勾选并保存可删除凭据。换电脑需重新输入。私钥口令仍仅保留在会话内存。\n\n无 GPU 主机显示在线并继续保活；驱动不可用与无设备分别显示。不提权，不控制用卡进程，不读取环境或完整命令行。\n\nOpenSSH 模式支持系统 config、Agent 和跳板机；内置密码模式仅直连。新主机需核对指纹，已有密钥变化拒绝连接。\n\n远端要求 Linux 与 Python 3.6+；GPU 遥测另需 NVIDIA 驱动和 nvidia-smi。\n\n配置位置：'+str(DATA)+'\nexe 旁放 portable.flag 可启用 data/ 便携模式。密码不进入 JSON、config 或迁移包，私钥请独立保管。')
+        self.notify('GPU Checker v7 使用说明','左侧主机在后台持续采集，点击只切换右侧视图。暂停某台或全部暂停会保存状态，下次启动仍暂停；恢复后重新启用自动连接。正常关闭窗口不会改变暂停设置。\n\n编辑主机可勾选记住服务器密码，存入当前 Windows 用户的凭据管理器。程序启动时可自动取用；暂停不会删除已保存密码。取消勾选并保存可删除凭据。换电脑需重新输入。私钥口令仍仅保留在会话内存。\n\n无 GPU 主机显示在线并继续保活；驱动不可用与无设备分别显示。不提权，不控制用卡进程，不读取环境或完整命令行。\n\nOpenSSH 模式支持系统 config、Agent 和跳板机；内置密码模式仅直连。新主机需核对指纹，已有密钥变化拒绝连接。\n\n远端要求 Linux 与 Python 3.6+；GPU 遥测另需 NVIDIA 驱动和 nvidia-smi。\n\n配置位置：'+str(DATA)+'\nexe 旁放 portable.flag 可启用 data/ 便携模式。密码不进入 JSON、config 或迁移包，私钥请独立保管。')
 
     def closeEvent(self,event):
         self.closing=True

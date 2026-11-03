@@ -2,6 +2,7 @@ from pathlib import Path
 from PySide6.QtCore import Qt,QRectF,QPointF,QVariantAnimation,QSize,QEvent,QEasingCurve
 from PySide6.QtGui import QColor, QPainter, QPainterPath, QPen, QLinearGradient, QRadialGradient,QFont
 from PySide6.QtWidgets import QWidget, QFrame, QLabel, QVBoxLayout, QHBoxLayout, QProgressBar,QPushButton,QSizePolicy
+from availability import result as availability_result
 
 STYLE = """
 QWidget {font-family:'Rajdhani Medium','Rajdhani','ZCOOL QingKe HuangYou','Noto Sans SC';font-size:15px;color:#a9cbdc;background:transparent;}
@@ -17,8 +18,8 @@ QFrame#sidebar {background:rgba(9,17,32,235);border-right:1px solid #20334d;}
 QFrame#glass,QFrame#card,QFrame#hostTile {background:transparent;border:0;}
 QLabel#metric {font-family:'Orbitron';font-size:30px;font-weight:500;color:#6bf8e0;}
 QLabel#stat {font-family:'Orbitron','ZCOOL QingKe HuangYou';font-size:21px;font-weight:500;color:#8fc8de;}
-QLineEdit,QSpinBox,QComboBox {background:#0b192a;border:1px solid #30536b;border-bottom:2px solid #345d73;border-radius:1px;padding:9px 12px;min-height:20px;selection-background-color:#15798a;}
-QLineEdit:focus,QSpinBox:focus,QComboBox:focus {border:1px solid #54e6e1;}
+QLineEdit,QSpinBox,QDoubleSpinBox,QComboBox {background:#0b192a;border:1px solid #30536b;border-bottom:2px solid #345d73;border-radius:1px;padding:9px 12px;min-height:20px;selection-background-color:#15798a;}
+QLineEdit:focus,QSpinBox:focus,QDoubleSpinBox:focus,QComboBox:focus {border:1px solid #54e6e1;}
 QComboBox QAbstractItemView {background:#14233a;color:#d5edff;selection-background-color:#24566b;}
 QPushButton {background:#142c3d;border:1px solid #365d74;border-radius:1px;padding:10px 20px;font-weight:400;}
 QPushButton:hover {background:#263c50;border-color:#52677d;color:#f0faff;}
@@ -162,12 +163,21 @@ class MechPanel(QFrame):
         selected=bool(self.property('selected'))
         rect=QRectF(0.7,0.7,self.width()-1.4,self.height()-1.4)
         gradient=QLinearGradient(0,0,self.width(),self.height())
-        gradient.setColorAt(0,QColor(22,61,76,230) if selected else QColor(17,37,56,222))
+        tones=[(18,38,59),(26,35,59),(18,44,48),(34,36,52)]
+        tone=(29,37,43) if self.property('noGpu') else tones[int(self.property('hostTone') or 0)%len(tones)] if role=='hostTile' else (17,37,56)
+        state_color=self.property('availabilityColor')
+        if role=='card' and state_color:
+            tint=QColor(state_color).getRgb()
+            tone=tuple(round(tone[i]*.85+tint[i]*.15) for i in range(3))
+        gradient.setColorAt(0,QColor(*(tuple(min(255,n+7) for n in tone) if selected else tone),230 if selected else 222))
         gradient.setColorAt(1,QColor(12,28,46,225))
         p.setBrush(gradient)
-        p.setPen(QPen(QColor('#58c8ce' if selected else '#2c5368'),1))
+        edge=QColor(state_color) if state_color else QColor('#58c8ce' if selected else '#2c5368')
+        if state_color:
+            edge.setAlpha(165)
+        p.setPen(QPen(edge,1))
         p.drawPath(notch_path(rect,10))
-        accent=QColor('#64e5d8' if selected else '#3e98ac' if role=='card' else '#315e76')
+        accent=QColor(state_color or ('#64e5d8' if selected else '#3e98ac' if role=='card' else '#315e76'))
         p.setPen(QPen(accent,2))
         p.drawLine(QPointF(1,1),QPointF(min(47,self.width()/3),1))
         p.drawLine(QPointF(self.width()-1,self.height()-1),QPointF(self.width()-24,self.height()-1))
@@ -347,6 +357,7 @@ class Sparkline(QWidget):
     def __init__(self):
         super().__init__()
         self.values = []
+        self.color=QColor('#61f9de')
         self.setFixedHeight(36)
 
     def paintEvent(self,event):
@@ -369,24 +380,31 @@ class Sparkline(QWidget):
             else:
                 path.lineTo(x,y)
             last = (x,y)
-        p.setPen(QPen(QColor(73,255,224,30),7))
+        glow=QColor(self.color);glow.setAlpha(30)
+        p.setPen(QPen(glow,7))
         p.drawPath(path)
-        p.setPen(QPen(QColor("#61f9de"),1.7))
+        p.setPen(QPen(self.color,1.7))
         p.drawPath(path)
         if last:
-            p.setBrush(QColor("#b9fff1"))
+            p.setBrush(self.color.lighter(130))
             p.setPen(Qt.PenStyle.NoPen)
             p.drawEllipse(last[0]-2,last[1]-2,4,4)
 
 
 class GPUCard(MechPanel):
-    def __init__(self,gpu,history=()):
+    def __init__(self,gpu,history=(),availability=None):
         super().__init__()
         self.setObjectName("card")
         box=QVBoxLayout(self)
         box.setContentsMargins(17,12,17,12)
         box.setSpacing(5)
         self.title=label("","eyebrow")
+        self.state_label=label('未知')
+        title_row=QHBoxLayout()
+        title_row.setContentsMargins(0,0,0,0)
+        title_row.addWidget(self.title,1)
+        title_row.addWidget(self.state_label)
+        box.addLayout(title_row)
         self.name=label("")
         self.name.setStyleSheet("font-size:12px;font-weight:600;color:#bdd5e9")
         self.metric_label=label("","metric")
@@ -395,12 +413,12 @@ class GPUCard(MechPanel):
         self.bar=QProgressBar()
         self.bar.setTextVisible(False)
         self.thermal=label("","muted")
-        for widget in (self.title,self.name,self.metric_label,self.spark,self.memory,self.bar,self.thermal):
+        for widget in (self.name,self.metric_label,self.spark,self.memory,self.bar,self.thermal):
             box.addWidget(widget)
-        self.update_data(gpu,history)
+        self.update_data(gpu,history,availability)
         self.enable_feedback()
 
-    def update_data(self,g,history):
+    def update_data(self,g,history,availability=None):
         self.title.setText(f"GPU {g['index']:02d}  /  {g['state']}")
         self.title.setToolTip(g["uuid"])
         name=g["name"].replace("NVIDIA ","")
@@ -414,16 +432,31 @@ class GPUCard(MechPanel):
         self.bar.setValue(int(100*(g['used'] or 0)/g['total']) if g['total'] else 0)
         self.thermal.setText(f"{fmt(g['temp'],' °C')}   ·   {fmt(g['power'],' W',1)}")
         self.thermal.setToolTip(f"风扇：{g['fan']}")
+        self.set_availability(availability or availability_result('unknown','等待完整的可用性判断'))
+
+    def set_availability(self,state):
+        color=state['color']
+        self.setProperty('availabilityColor',color)
+        self.state_label.setText(state['label'])
+        self.state_label.setStyleSheet(f'font-size:13px;color:{color}')
+        self.state_label.setToolTip(state['reason'])
+        self.metric_label.setStyleSheet(f'color:{color}')
+        self.bar.setStyleSheet(f'QProgressBar::chunk {{background:{color};border-radius:0;}}')
+        self.spark.color=QColor(color)
+        self.spark.update()
+        self.setToolTip(state['label']+'：'+state['reason'])
+        self.update()
 
 
 class HostTile(MechPanel):
-    def __init__(self,session):
+    def __init__(self,session,tone_index=0):
         super().__init__()
         self.setObjectName("hostTile")
+        self.setProperty('hostTone',tone_index)
         self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
         box=QVBoxLayout(self)
-        box.setContentsMargins(15,13,15,13)
-        box.setSpacing(7)
+        box.setContentsMargins(13,11,13,11)
+        box.setSpacing(5)
         row=QHBoxLayout()
         self.name=label(session.profile['name'])
         self.name.setStyleSheet("font-family:'Rajdhani Medium','Rajdhani','ZCOOL QingKe HuangYou';font-weight:500;font-size:17px;color:#95cfe0")
@@ -436,12 +469,18 @@ class HostTile(MechPanel):
         box.addWidget(self.endpoint)
         self.summary=label("","muted")
         box.addWidget(self.summary)
+        self.capacity=label('空闲 — · 可用 —','muted')
+        self.capacity.setStyleSheet('font-size:14px;color:#78a9bd')
+        box.addWidget(self.capacity)
         self.bar=QProgressBar()
         self.bar.setTextVisible(False)
         box.addWidget(self.bar)
         self.update_data(session)
 
     def update_data(self,session,selected=False):
+        no_gpu=session.gpu_hint=='no_gpu'
+        self.capacity.setStyleSheet('font-size:14px;color:'+('#7a8c97' if no_gpu else '#78a9bd'))
+        self.setProperty('noGpu',no_gpu)
         self.setProperty("selected",selected)
         self.style().unpolish(self)
         self.style().polish(self)
@@ -450,7 +489,7 @@ class HostTile(MechPanel):
         self.name.setToolTip(name)
         endpoint=session.profile['host']
         self.endpoint.setText(endpoint[:29]+('…' if len(endpoint)>29 else ''))
-        self.dot.setTone('#5bdac4' if session.fresh else '#c8a572' if session.desired else '#5c798c')
+        self.dot.setTone('#8b9ca6' if no_gpu else '#5bdac4' if session.fresh else '#c8a572' if session.desired else '#5c798c')
         if session.snapshot:
             gs=session.snapshot['gpus']
             utils=[g['util'] for g in gs if g['util'] is not None]
@@ -463,6 +502,16 @@ class HostTile(MechPanel):
             self.bar.setValue(0)
             self.bar.setVisible(session.desired)
         self.setToolTip(session.message)
+        counts=session.availability_counts()
+        if no_gpu:
+            self.capacity.setText('无 GPU · 仅 SSH 连接' if session.fresh else '无 GPU（上次检测）')
+            self.capacity.setStyleSheet('font-size:14px;color:#7a8c97')
+        elif counts is not None:
+            self.capacity.setText(f"空闲 {counts['idle']} · 可用 {counts['available']} / {counts['total']}"+(' · 待确认' if counts['unknown'] else ''))
+        else:
+            self.capacity.setText('空闲 — · 可用 —')
+        self.capacity.setToolTip('可用数量包含空闲卡；根据当前显存门槛、负载、进程、设备状态及连续采样判断。暂停和过期数据不计为可用。')
+        self.update()
 
 
 class StatusIndicator(QWidget):

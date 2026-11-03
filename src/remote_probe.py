@@ -61,9 +61,21 @@ def parse_xml(xml, details=process_details):
              "util": number(text(gpu, "utilization/gpu_util")),
              "used": number(text(gpu, "fb_memory_usage/used")),
              "total": number(text(gpu, "fb_memory_usage/total")),
+             'free':number(text(gpu,'fb_memory_usage/free')),
              "temp": number(text(gpu, "temperature/gpu_temp")),
              "power": number(text(gpu, "gpu_power_readings/power_draw")),
              "fan": text(gpu, "fan_speed"), "state": text(gpu, "performance_state")}
+        process_node=gpu.find('processes')
+        process_text=(process_node.text or '').lower() if process_node is not None else ''
+        g.update(compute_mode=text(gpu,'compute_mode'),mig_mode=text(gpu,'mig_mode/current_mig'),
+                 recovery_action=text(gpu,'gpu_recovery_action'),
+                 slowdown_temp=number(text(gpu,'temperature/gpu_temp_slow_threshold')),
+                 remap_failure=text(gpu,'remapped_rows/remapping_failure'),
+                 minor_number=text(gpu,'minor_number'),
+                 process_query_ok=process_node is not None and not any(s in process_text for s in ('not supported','insufficient','permission','error','n/a')))
+        ecc=[number(text(gpu,p)) for p in ('ecc_errors/volatile/dram_uncorrectable',
+             'ecc_errors/volatile/double_bit/device_memory','ecc_errors/volatile/device_memory/uncorrectable')]
+        g['ecc_uncorrectable']=max((n for n in ecc if n is not None),default=None)
         for path in ("gpu_power_readings/instant_power_draw", "gpu_power_readings/average_power_draw",
                      "power_readings/power_draw", "power_readings/instant_power_draw"):
             if g["power"] is None:
@@ -72,6 +84,7 @@ def parse_xml(xml, details=process_details):
         for p in gpu.findall("processes/process_info"):
             pid = text(p, "pid")
             if not pid.isdigit():
+                g['process_query_ok']=False
                 continue
             if pid not in cache:
                 cache[pid] = details(pid)
@@ -80,7 +93,8 @@ def parse_xml(xml, details=process_details):
                                   memory=number(text(p, "used_memory")),
                                   instance=text(p, "gpu_instance_id")))
     return {"gpus": gpus, "processes": processes, "driver": text(root, "driver_version"),
-            "cuda": text(root, "cuda_version"), "timestamp": time.time()}
+            "cuda": text(root, "cuda_version"), "timestamp": time.time(),
+            'gpu_status':'available' if gpus else 'no_gpu'}
 
 
 def sample():
@@ -109,7 +123,13 @@ def sample():
                     'gpu_status':'no_gpu','notice':'SSH 已连接；nvidia-smi 未发现 NVIDIA GPU'}
         return {'gpus':[],'processes':[],'driver':'N/A','cuda':'N/A','timestamp':time.time(),
                 'gpu_status':'unavailable','notice':'SSH 已连接，GPU 查询不可用：'+message}
-    return parse_xml(run.stdout)
+    data=parse_xml(run.stdout)
+    for g in data['gpus']:
+        minor=g.get('minor_number','')
+        paths=['/dev/nvidia'+minor,'/dev/nvidiactl'] if minor.isdigit() else []
+        g['device_access']=(all(os.access(p,os.R_OK|os.W_OK) for p in paths)
+                            if paths and all(os.path.exists(p) for p in paths) else None)
+    return data
 
 
 def main(interval=2):

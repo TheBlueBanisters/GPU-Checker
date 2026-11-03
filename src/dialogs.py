@@ -1,12 +1,13 @@
 from pathlib import Path
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (QDialog,QVBoxLayout,QHBoxLayout,QFormLayout,QLineEdit,QComboBox,
-    QSpinBox,QCheckBox,QPushButton,QDialogButtonBox,QFileDialog,QMessageBox,QPlainTextEdit)
+    QSpinBox,QCheckBox,QPushButton,QDialogButtonBox,QFileDialog,QMessageBox,QPlainTextEdit,QDoubleSpinBox)
 from backend import BASE, validate, config_path
 from visuals import label,MechPanel
 from window_chrome import TitleBar,install_handles,layout_handles
 import profiles
 import vault
+from availability import Rules
 
 
 class MechDialog(QDialog):
@@ -224,3 +225,39 @@ class ConfigDialog(MechDialog):
     def save(self):
         if self.check():
             self.accept()
+
+
+class AvailabilityDialog(MechDialog):
+    def __init__(self,parent,rules):
+        super().__init__(parent)
+        self.setWindowTitle('GPU 可用性判定规则')
+        self.resize(620,530)
+        box=dialog_layout(self)
+        box.setContentsMargins(24,22,24,22)
+        box.setSpacing(15)
+        box.addWidget(label('可用性判定','section'))
+        form=QFormLayout()
+        form.setSpacing(12)
+        self.free=QDoubleSpinBox()
+        self.free.setRange(.5,512);self.free.setSingleStep(.5);self.free.setSuffix(' GiB');self.free.setValue(rules.free_mib/1024)
+        self.fraction=QSpinBox()
+        self.fraction.setRange(0,95);self.fraction.setSuffix(' %');self.fraction.setValue(round(rules.free_fraction*100))
+        self.util=QSpinBox()
+        self.util.setRange(0,90);self.util.setSuffix(' %');self.util.setValue(round(rules.max_util))
+        self.duration=QSpinBox()
+        self.duration.setRange(3,120);self.duration.setSuffix(' 秒');self.duration.setValue(round(rules.stable_seconds))
+        for title,widget in (('最低剩余显存',self.free),('最低剩余显存比例',self.fraction),('最高 GPU 利用率',self.util),('最短观察跨度',self.duration)):
+            form.addRow(title,widget)
+        box.addLayout(form)
+        explanation=label('可用含空闲，两项显存门槛同时满足。至少 3 次连续采样并覆盖观察跨度后，才能确认可用。\n\n空闲：没有任何 GPU 进程、利用率 ≤5%、显存仅少量后台开销。可用：也允许少量图形后台进程，但计算／MPS 进程一律视为占用。\n\n数据缺失、设备权限不明、MIG 无法确认、暂停／过期时不标可用。驱动禁止计算、恢复请求或明显硬件异常会排除。\n\n这是只读资源观测，不预留显存、不测试运行 CUDA，也不代替集群调度器或保证任务分配成功。','muted')
+        explanation.setWordWrap(True)
+        box.addWidget(explanation)
+        buttons=QDialogButtonBox(QDialogButtonBox.StandardButton.Save|QDialogButtonBox.StandardButton.Cancel)
+        buttons.button(QDialogButtonBox.StandardButton.Save).setText('保存规则')
+        buttons.button(QDialogButtonBox.StandardButton.Cancel).setText('取消')
+        buttons.accepted.connect(self.accept);buttons.rejected.connect(self.reject)
+        box.addWidget(buttons)
+
+    def rules(self):
+        return Rules(free_mib=self.free.value()*1024,free_fraction=self.fraction.value()/100,
+                     max_util=self.util.value(),stable_seconds=self.duration.value())

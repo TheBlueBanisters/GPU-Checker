@@ -1,7 +1,7 @@
 """Header and cells use identical text insets and column alignments."""
-from PySide6.QtCore import Qt,QRect
+from PySide6.QtCore import Qt,QRect,QEvent
 from PySide6.QtGui import QColor,QFont
-from PySide6.QtWidgets import QHeaderView,QStyledItemDelegate,QStyle
+from PySide6.QtWidgets import QHeaderView,QStyledItemDelegate,QStyle,QTableWidget
 
 INSET=20
 ALIGNMENTS=[Qt.AlignmentFlag.AlignCenter,Qt.AlignmentFlag.AlignLeft|Qt.AlignmentFlag.AlignVCenter,
@@ -12,6 +12,32 @@ ALIGNMENTS=[Qt.AlignmentFlag.AlignCenter,Qt.AlignmentFlag.AlignLeft|Qt.Alignment
 
 def text_rect(rect):
     return rect.adjusted(INSET,0,-INSET,0)
+
+
+class ProcessTable(QTableWidget):
+    def __init__(self,*args,**kwargs):
+        super().__init__(*args,**kwargs)
+        self.hovered_row=-1
+        self.setMouseTracking(True)
+        self.viewport().setMouseTracking(True)
+
+    def _hover_row(self,row):
+        if row==self.hovered_row:
+            return
+        previous=self.hovered_row
+        self.hovered_row=row
+        for r in (previous,row):
+            if 0<=r<self.rowCount():
+                self.viewport().update(QRect(0,self.rowViewportPosition(r),self.viewport().width(),self.rowHeight(r)))
+
+    def mouseMoveEvent(self,event):
+        self._hover_row(self.rowAt(int(event.position().y())))
+        super().mouseMoveEvent(event)
+
+    def viewportEvent(self,event):
+        if event.type()==QEvent.Type.Leave:
+            self._hover_row(-1)
+        return super().viewportEvent(event)
 
 
 class ProcessHeader(QHeaderView):
@@ -42,7 +68,12 @@ class ProcessHeader(QHeaderView):
 class ProcessCells(QStyledItemDelegate):
     def paint(self,painter,option,index):
         painter.save()
-        painter.fillRect(option.rect,QColor('#19485a') if option.state & QStyle.StateFlag.State_Selected else QColor('#0c192b'))
+        hovered=getattr(self.parent(),'hovered_row',-1)==index.row()
+        selected=bool(option.state & QStyle.StateFlag.State_Selected)
+        color='#205568' if selected and hovered else '#19485a' if selected else '#143449' if hovered else '#0c192b'
+        painter.fillRect(option.rect,QColor(color))
+        if hovered and index.column()==0:
+            painter.fillRect(QRect(option.rect.x(),option.rect.y(),3,option.rect.height()),QColor('#61c9cf'))
         painter.setPen(QColor('#203247'))
         painter.drawLine(option.rect.bottomLeft(),option.rect.bottomRight())
         painter.drawLine(option.rect.topRight(),option.rect.bottomRight())

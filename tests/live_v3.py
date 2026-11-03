@@ -30,7 +30,7 @@ def check():
     if state['ok'] or state.get('busy'):
         return
     sessions=list(w.sessions.values())
-    if len(sessions)==3 and all(s.fresh and s.sample_count>=4 for s in sessions):
+    if len(sessions)==3 and all(s.fresh and s.sample_count>=7 for s in sessions):
         state['busy']=True
         cpu=next(s for s in sessions if s.profile['host']=='lisa-cpu')
         assert cpu.state=='在线 · 无 GPU' and cpu.snapshot['gpus']==[]
@@ -44,6 +44,9 @@ def check():
         assert next(p for p in profiles.load() if p['id']==cpu.id)['autoconnect'] is False
         w.host_list.setCurrentRow(0)
         application.processEvents()
+        if w.table.rowCount():
+            QTest.mouseMove(w.table.viewport(),w.table.visualItemRect(w.table.item(0,2)).center())
+            QTest.qWait(30)
         w.grab().save(str(out/'preview.png'))
         if '--feedback-demo' in sys.argv:
             frames=out.parent/'build/feedback-frames'
@@ -71,7 +74,8 @@ def check():
         c.editor.setPlainText('Host lab-gpu\n HostName gpu.example.com\n User yourname\n\nHost cpu-server\n HostName cpu.example.com\n')
         assert not c.check()
         c.show();application.processEvents();c.grab().save(str(out/'config-editor.png'));c.close()
-        state.update(ok=True,samples=[s.sample_count for s in sessions],gpu_counts=[len(s.snapshot['gpus']) for s in sessions],saved_password_autologin=True,pause_persisted=True)
+        state.update(ok=True,samples=[s.sample_count for s in sessions],gpu_counts=[len(s.snapshot['gpus']) for s in sessions],saved_password_autologin=True,pause_persisted=True,
+                     availability=[{'host':s.profile['name'],'counts':s.availability_counts(),'states':[value['status'] for value in s.gpu_states.values()]} for s in sessions])
         w.close()
 
 def timeout():

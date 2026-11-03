@@ -5,6 +5,7 @@ from PySide6.QtCore import QObject, QTimer, Signal
 from backend import Monitor
 import profiles
 import vault
+from availability import Tracker,result
 
 
 class HostSession(QObject):
@@ -25,6 +26,9 @@ class HostSession(QObject):
         self.history = {}
         self.received = 0
         self.sample_count = 0
+        self.availability_tracker=Tracker()
+        self.gpu_states={}
+        self.gpu_hint=None
         self.state = '未连接' if self.profile['autoconnect'] else '已暂停'
         self.message = '点击连接开始监控' if self.profile['autoconnect'] else '已记住暂停状态，不会自动连接'
         self.retry_count = 0
@@ -67,6 +71,8 @@ class HostSession(QObject):
         if not self.desired or self.running:
             return
         self.state, self.message = "连接中", "正在建立加密连接…"
+        self.availability_tracker.reset()
+        self.gpu_states={}
         worker = self.factory(self.profile, self.password, self.passphrase)
         self.worker = worker
         worker.data.connect(lambda data, w=worker: self._sample(w, data))
@@ -94,6 +100,8 @@ class HostSession(QObject):
         if worker is not self.worker or not self.desired:
             return
         if data.get("error"):
+            self.availability_tracker.reset()
+            self.gpu_states={}
             self.state, self.message = "采样异常", str(data["error"])
             self.changed.emit(self.id)
             return
@@ -102,6 +110,8 @@ class HostSession(QObject):
         self.sample_count += 1
         self.retry_count = 0
         capability=data.get('gpu_status','available')
+        self.gpu_hint=capability
+        self.gpu_states=self.availability_tracker.observe(data,self.received,self.profile['interval'])
         self.state = '在线 · 无 GPU' if capability=='no_gpu' else '在线 · GPU 不可用' if capability=='unavailable' else '在线'
         self.message=data.get('notice') or '只读实时采样正常'
         for gpu in data["gpus"]:
@@ -142,6 +152,7 @@ class HostSession(QObject):
     def stop(self):
         self.desired = False
         self.retry_timer.stop()
+        self.availability_tracker.reset()
         self.password = self.passphrase = ""
         self.state, self.message = "已停止", "监控已停止；保留最后一次采样"
         if self.worker:
@@ -157,4 +168,17 @@ class HostSession(QObject):
     def refresh_age(self):
         if self.state in ('在线','在线 · 无 GPU','在线 · GPU 不可用') and not self.fresh:
             self.state, self.message = "数据过期", "等待新采样；显示的是历史数据"
+            self.availability_tracker.reset()
             self.changed.emit(self.id)
+
+    def gpu_availability(self,uuid):
+        if not self.fresh:
+            return result('unknown','监控暂停、连接异常或数据过期，不沿用历史可用判断')
+        return self.gpu_states.get(uuid,result('unknown','尚无完整采样'))
+
+    def availability_counts(self):
+        if not self.fresh or not self.snapshot or self.gpu_hint=='unavailable':
+            return None
+        states=[self.gpu_availability(g['uuid']) for g in self.snapshot['gpus']]
+        return {'idle':sum(s['idle'] for s in states),'available':sum(s['available'] for s in states),
+                'total':len(states),'unknown':sum(s['status'] in ('unknown','observing') for s in states)}

@@ -49,6 +49,53 @@ def test_host_actions_equal_and_process_count_separate(window):
     assert w.badge.height()==26
 
 
+def test_process_hover_highlights_row_without_changing_selection(window):
+    from PySide6.QtCore import QEvent
+    w=window
+    w.show();w.connect_all()
+    data=snapshot(1)
+    data['processes'].append(dict(data['processes'][0],pid='999'))
+    w.selected.worker.data.emit(data)
+    w.table.selectRow(1)
+    QApplication.processEvents()
+    rect=w.table.visualItemRect(w.table.item(0,2))
+    QTest.mouseMove(w.table.viewport(),rect.center())
+    assert w.table.hovered_row==0
+    assert w.table.selectionModel().selectedRows()[0].row()==1
+    QApplication.sendEvent(w.table.viewport(),QEvent(QEvent.Type.Leave))
+    assert w.table.hovered_row==-1
+
+
+def test_host_tints_and_no_gpu_gray_hint(window):
+    a,b=list(window.sessions.values())
+    assert window.tiles[a.id].property('hostTone')!=window.tiles[b.id].property('hostTone')
+    b.gpu_hint='no_gpu'
+    window.host_changed(b.id)
+    assert window.tiles[b.id].property('noGpu') is True
+    assert '无 GPU' in window.tiles[b.id].capacity.text()
+
+
+def test_availability_is_invalidated_on_pause_staleness_and_resume(window,monkeypatch):
+    import sessions
+    from test_availability import gpu
+    clock=[100.]
+    monkeypatch.setattr(sessions.time,'monotonic',lambda:clock[0])
+    w=window;w.connect_all();s=w.selected
+    data=snapshot(1)
+    data['gpus'][0].update(gpu(uuid=data['gpus'][0]['uuid']))
+    data['processes']=[]
+    for now in (100.,105.,110.):
+        clock[0]=now;s.worker.data.emit(data)
+    assert s.availability_counts()['idle']==1 and s.availability_counts()['available']==1
+    uuid=data['gpus'][0]['uuid']
+    s.pause()
+    assert s.availability_counts() is None and not s.gpu_availability(uuid)['available']
+    s.start();clock[0]=120.;s.worker.data.emit(data)
+    assert s.gpu_availability(uuid)['status']=='observing'
+    clock[0]=1000.;s.refresh_age()
+    assert s.availability_counts() is None and s.gpu_availability(uuid)['status']=='unknown'
+
+
 def test_panel_feedback_on_child_labels_is_cosmetic_and_finishes(window):
     from PySide6.QtCore import QAbstractAnimation
     w=window
