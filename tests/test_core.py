@@ -85,3 +85,10 @@ def test_native_uses_config_and_quoted_argv(tmp_path, monkeypatch):
     assert "StrictHostKeyChecking=yes" in args
     assert args[args.index("-i")+1].endswith("key with spaces")
     assert args[-2] == "sample"
+
+
+def test_new_install_has_no_personal_or_automatic_hosts(tmp_path,monkeypatch):
+    monkeypatch.setattr(profiles,"DATA",tmp_path)
+    assert profiles.load()==[]
+    profiles.save(profiles.load())
+    assert profiles.load()==[]

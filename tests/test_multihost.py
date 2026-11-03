@@ -2,7 +2,7 @@ import os
 os.environ.setdefault('QT_QPA_PLATFORM','offscreen')
 import time
 import pytest
-from PySide6.QtCore import QObject,Signal
+from PySide6.QtCore import QObject,Signal,QCoreApplication,QEvent
 from PySide6.QtWidgets import QApplication
 import app as ui
 import backend
@@ -57,6 +57,8 @@ def window(tmp_path,monkeypatch):
     w=ui.Window(autostart=False,session_factory=factory)
     yield w
     w.close()
+    w.deleteLater()
+    QCoreApplication.sendPostedEvents(None,QEvent.Type.DeferredDelete)
     application.processEvents()
 
 

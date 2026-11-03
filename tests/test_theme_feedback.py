@@ -75,3 +75,17 @@ def test_grid_visible_on_hover_in_both_themes(window):
         fill=image.pixelColor(rect.right()-5,rect.top()+5)
         assert sum(abs(border.getRgb()[i]-fill.getRgb()[i]) for i in range(3))>60
     themes.apply(QApplication.instance(),'night',STYLE)
+
+
+def test_repeated_theme_switch_after_dialog_destruction(window):
+    from PySide6.QtCore import QCoreApplication
+    window.show()
+    for i in range(12):
+        dialog=HostDialog(window,window.selected.profile)
+        dialog.show();QApplication.processEvents()
+        dialog.close();dialog.deleteLater()
+        QCoreApplication.sendPostedEvents(None,QEvent.Type.DeferredDelete)
+        themes.apply(QApplication.instance(),'day' if i%2==0 else 'night',STYLE)
+        QApplication.processEvents()
+        assert window.isVisible()
+    themes.apply(QApplication.instance(),'night',STYLE)

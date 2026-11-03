@@ -281,9 +281,9 @@ class Window(QMainWindow):
         layout_handles(self)
         self.tick()
         if self.load_error:
-            QTimer.singleShot(100,lambda: self.notify('配置读取提示',self.load_error))
+            QTimer.singleShot(100,self,lambda: self.notify('配置读取提示',self.load_error) if not self.closing else None)
         if autostart:
-            QTimer.singleShot(350,self.autostart)
+            QTimer.singleShot(350,self,self.autostart)
 
     def button(self,text,fn,primary=False):
         button=ModernButton(text,primary,ghost=text in ('导入 SSH config','粘贴 / 编辑 config','迁移配置','使用说明','编辑','移除'))
@@ -526,6 +526,7 @@ class Window(QMainWindow):
         self.details.setPlainText(f"GPU {p['gpu']}  |  PID {p['pid']}  |  用户 {p.get('user','—')}  |  UID {p.get('uid','—')}  |  父 PID {p.get('ppid','—')}\n工作目录：{p.get('cwd','—')}\n可执行文件：{p.get('exe','—')}\n驱动报告：{p['name']}\nGPU 实例：{p.get('instance','N/A')}  |  进程身份标记：{p.get('start','不可用')}")
 
     def autostart(self):
+        if self.closing: return
         for session in self.sessions.values():
             if session.profile['autoconnect']:
                 session.start()
@@ -776,7 +777,7 @@ class Window(QMainWindow):
     def queue_trust(self,sid,host,fingerprint):
         self.trust_queue.append((sid,self.sessions.get(sid),host,fingerprint))
         if not self.trust_busy:
-            QTimer.singleShot(0,self.drain_trust)
+            QTimer.singleShot(0,self,self.drain_trust)
 
     def drain_trust(self):
         if self.trust_busy:
@@ -821,9 +822,9 @@ class Window(QMainWindow):
         super().resizeEvent(event)
         if hasattr(self,'card_scroll'):
             self.size_cards()
-            QTimer.singleShot(0,self.size_cards)
+            QTimer.singleShot(0,self,self.size_cards)
         if hasattr(self,'table'):
-            QTimer.singleShot(0,self.layout_process_columns)
+            QTimer.singleShot(0,self,self.layout_process_columns)
         if getattr(self,'resize_handles',None):
             layout_handles(self)
 
@@ -855,7 +856,8 @@ def configure_app(app):
         app.hover_popup_filter=NoHoverPopups(app)
         app.installEventFilter(app.hover_popup_filter)
     QToolTip.hideText()
-    app.setStyle('Fusion')
+    if app.style().objectName().casefold()!='fusion':
+        app.setStyle('Fusion')
     if not app.property('bundledFontsLoaded'):
         for path in (ASSETS/'fonts').glob('*.ttf'):
             QFontDatabase.addApplicationFont(str(path))

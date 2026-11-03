@@ -73,7 +73,7 @@ def load():
     elif registry['hosts'] or registry['removed']:
         items=[]
     else:
-        return [clean({'name':'null-sf.top','host':'null-sf.top'})]
+        return []
     removed=set(registry['removed'])
     by_id={p['id']:p for p in items if p['id'] not in removed}
     for p in registry['hosts']:

@@ -1,5 +1,6 @@
 """Shared day/night tokens for stylesheets and custom-painted components."""
 import re
+from shiboken6 import isValid
 from PySide6.QtGui import QColor,QPalette
 from PySide6.QtWidgets import QApplication,QWidget
 
@@ -66,7 +67,10 @@ def set_style(widget,css):
 
 
 def apply(app,mode,base_style):
-    app.setProperty('colorMode','day' if mode=='day' else 'night')
+    mode='day' if mode=='day' else 'night'
+    if app.property('colorMode')==mode and app.styleSheet()==style_for(base_style):
+        return
+    app.setProperty('colorMode',mode)
     palette=QPalette()
     for role,value in ((QPalette.ColorRole.Window,'#080f1e'),(QPalette.ColorRole.Base,'#0e1b2d'),
                        (QPalette.ColorRole.WindowText,'#a9cbdc'),(QPalette.ColorRole.Text,'#a9cbdc'),
@@ -76,9 +80,11 @@ def apply(app,mode,base_style):
     app.setPalette(palette)
     app.setStyleSheet(style_for(base_style))
     for widget in app.allWidgets():
+        if not isValid(widget): continue
         css=widget.property('_nightStyle')
         if isinstance(css,str):
             widget.setStyleSheet(style_for(css))
+        if not isValid(widget): continue
         if getattr(widget,'kind',None)=='theme':
             widget.sync_theme_label()
-        QWidget.update(widget)
+        if isValid(widget): QWidget.update(widget)

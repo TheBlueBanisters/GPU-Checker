@@ -2,6 +2,10 @@
 
 Windows 上的轻量远程 NVIDIA GPU 查看器。新版程序在 `delivery/GPUChecker-v14.exe`，双击即可运行，不需要安装 Python、Qt 或 AI 服务。深色科幻界面包含荧光曲线、选中高亮、网格背景和半透明面板。
 
+## Release 下载
+
+Windows 10/11 x64 请到 [GitHub Releases](https://github.com/TheBlueBanisters/GPU-Checker/releases/latest) 下载 `GPUChecker-v14.0.0-Windows-x64.zip`，解压后双击 `GPUChecker.exe`。不需要安装 Python、Qt 或 AI 服务。新电脑首次启动为空列表，添加或导入自己的主机即可；已使用本程序的电脑继续读取原有配置。发行包不带开发者的主机、密码或快照。详细说明见 [RELEASE_GUIDE.md](RELEASE_GUIDE.md)。
+
 ## 快速开始
 
 1. 左侧直接显示主机列表及每台主机的在线状态、GPU 数量和平均负载。点击条目只切换右侧视图，**不会断开其他主机**。每台主机的连接、数据、最近 60 次趋势和重连计时独立保存于当前会话。
@@ -83,7 +87,7 @@ Python 3.11+ x64，执行 `powershell -ExecutionPolicy Bypass -File .\build.ps1`
 
 按钮参考 [Fluent 2 按钮层级](https://fluent2.microsoft.design/components/web/react/core/button/usage/) 和 [字体层级](https://fluent2.microsoft.design/typography)，统一图标、圆角、悬停过渡和按下反馈；非主要操作采用低干扰按钮。随程序打包 Inter、Noto Sans SC、JetBrains Mono；字体来自 Google Fonts 官方仓库，OFL 文件在 assets/fonts 中，运行时不用在线下载或安装字体。
 
-点击单台“暂停监控”或“全部暂停”会保存暂停状态；下次启动不会连接这些主机，即便已经保存密码。恢复监控后重新启用自动连接。正常关闭程序不会把主机误记为暂停。Windows 凭据仅属于当前机器和当前用户，迁移后需重新输入密码。桌面快捷方式指向本机交付目录中的 v3 exe，移动 exe 后需重新创建或调整快捷方式。
+点击单台“暂停监控”或“全部暂停”会保存暂停状态；下次启动不会连接这些主机，即便已经保存密码。恢复监控后重新启用自动连接。正常关闭程序不会把主机误记为暂停。Windows 凭据仅属于当前机器和当前用户，迁移后需重新输入密码。桌面快捷方式指向本机交付目录中的当前版本 exe，移动 exe 后需重新创建或调整快捷方式。
 
 ## v4 窗口与排版修正
 
