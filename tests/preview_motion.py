@@ -26,7 +26,9 @@ out=Path(__file__).resolve().parents[1]/'build/motion-frames';out.mkdir(parents=
 QTest.mouseMove(w,QPoint(5,5))
 for i in range(90):
  QTest.qWait(50)
- if i==10: cards[0].pulse_at(QPoint(105,140))
+ if i==10: cards[0].pulse_at(QPoint(35,120))
+ if i==18: cards[0].pulse_at(QPoint(145,170))
+ if i==26: cards[0].pulse_at(QPoint(90,60))
  w.grab().save(str(out/f'frame-{i:03d}.png'))
 w.close()
 print('Saved 90 synthetic animation frames')

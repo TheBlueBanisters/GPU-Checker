@@ -7,11 +7,11 @@ import sys
 import tempfile
 import time
 import uuid
-from PySide6.QtCore import Qt, QTimer, QSize,QEvent
+from PySide6.QtCore import Qt, QTimer, QSize,QEvent,QObject
 from PySide6.QtGui import QColor, QIcon, QPalette,QFontDatabase,QFont
 from PySide6.QtWidgets import (QApplication,QMainWindow,QWidget,QFrame,QLabel,QHBoxLayout,QVBoxLayout,
     QPushButton,QLineEdit,QListWidget,QListWidgetItem,QScrollArea,QTableWidget,QTableWidgetItem,
-    QHeaderView,QTextEdit,QSplitter,QFileDialog,QMessageBox,QDialog,QSizePolicy)
+    QHeaderView,QTextEdit,QSplitter,QFileDialog,QMessageBox,QDialog,QSizePolicy,QToolTip)
 from backend import DATA, config_path
 from sessions import HostSession
 from dialogs import HostDialog,ConfigDialog
@@ -24,6 +24,14 @@ from dialogs import AvailabilityDialog
 from window_chrome import TitleBar,install_handles,layout_handles
 
 ASSETS=Path(getattr(sys,'_MEIPASS',Path(__file__).parent.parent))/'assets'
+
+
+class NoHoverPopups(QObject):
+    def eventFilter(self,watched,event):
+        if event.type()==QEvent.Type.ToolTip:
+            QToolTip.hideText()
+            return True
+        return False
 
 
 class Window(QMainWindow):
@@ -795,7 +803,7 @@ class Window(QMainWindow):
                 control.update()
 
     def help(self):
-        self.notify('GPU Checker v9 使用说明','左侧主机在后台持续采集，点击只切换右侧视图。暂停某台或全部暂停会保存状态，下次启动仍暂停；恢复后重新启用自动连接。正常关闭窗口不会改变暂停设置。\n\n编辑主机可勾选记住服务器密码，存入当前 Windows 用户的凭据管理器。程序启动时可自动取用；暂停不会删除已保存密码。取消勾选并保存可删除凭据。换电脑需重新输入。私钥口令仍仅保留在会话内存。\n\n无 GPU 主机显示在线并继续保活；驱动不可用与无设备分别显示。不提权，不控制用卡进程，不读取环境或完整命令行。\n\nOpenSSH 模式支持系统 config、Agent 和跳板机；内置密码模式仅直连。新主机需核对指纹，已有密钥变化拒绝连接。\n\n远端要求 Linux 与 Python 3.6+；GPU 遥测另需 NVIDIA 驱动和 nvidia-smi。\n\n配置位置：'+str(DATA)+'\nexe 旁放 portable.flag 可启用 data/ 便携模式。密码不进入 JSON、config 或迁移包，私钥请独立保管。')
+        self.notify('GPU Checker v10 使用说明','左侧主机在后台持续采集，点击只切换右侧视图。暂停某台或全部暂停会保存状态，下次启动仍暂停；恢复后重新启用自动连接。正常关闭窗口不会改变暂停设置。\n\n编辑主机可勾选记住服务器密码，存入当前 Windows 用户的凭据管理器。程序启动时可自动取用；暂停不会删除已保存密码。取消勾选并保存可删除凭据。换电脑需重新输入。私钥口令仍仅保留在会话内存。\n\n无 GPU 主机显示在线并继续保活；驱动不可用与无设备分别显示。不提权，不控制用卡进程，不读取环境或完整命令行。\n\nOpenSSH 模式支持系统 config、Agent 和跳板机；内置密码模式仅直连。新主机需核对指纹，已有密钥变化拒绝连接。\n\n远端要求 Linux 与 Python 3.6+；GPU 遥测另需 NVIDIA 驱动和 nvidia-smi。\n\n配置位置：'+str(DATA)+'\nexe 旁放 portable.flag 可启用 data/ 便携模式。密码不进入 JSON、config 或迁移包，私钥请独立保管。')
 
     def closeEvent(self,event):
         self.closing=True
@@ -811,6 +819,10 @@ class Window(QMainWindow):
 
 
 def configure_app(app):
+    if not hasattr(app,'hover_popup_filter'):
+        app.hover_popup_filter=NoHoverPopups(app)
+        app.installEventFilter(app.hover_popup_filter)
+    QToolTip.hideText()
     app.setStyle('Fusion')
     if not app.property('bundledFontsLoaded'):
         for path in (ASSETS/'fonts').glob('*.ttf'):

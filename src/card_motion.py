@@ -6,6 +6,21 @@ from PySide6.QtGui import QColor,QPen,QPainterPath,QRadialGradient
 from themes import color as themed,is_day
 
 
+def cylinder_state(phase,index):
+    # phase is a full 720-degree four-stroke cycle, firing order 1-3-4-2.
+    angle=(phase*4*math.pi+(0,math.pi,3*math.pi,2*math.pi)[index])%(4*math.pi)
+    crank_x=8*math.sin(angle)
+    crank_y=94-8*math.cos(angle)  # angle 0 = top dead centre
+    piston_y=crank_y-math.sqrt(49**2-crank_x**2)
+    relative=angle-4*math.pi if angle>3*math.pi else angle
+    def smooth(x):
+        x=max(0,min(1,x))
+        return x*x*(3-2*x)
+    # Ignition begins just before compression TDC; fades on the power downstroke.
+    burn=smooth((relative+.22)/.32)*(1-smooth((relative-.10)/.95))
+    return crank_x,crank_y,piston_y,burn
+
+
 class CardMotion:
     def __init__(self,widget):
         self.widget=widget
@@ -68,16 +83,15 @@ class CardMotion:
         p.drawLine(QPointF(0,90),QPointF(136,90))
         for i in range(4):
             x=17+i*34
-            angle=self.phase*math.tau+(0,math.pi,math.pi*1.5,math.pi*.5)[i]
-            crank=QPointF(x+8*math.sin(angle),94+8*math.cos(angle))
-            piston_y=crank.y()-math.sqrt(49**2-(crank.x()-x)**2)
+            crank_x,crank_y,piston_y,burn=cylinder_state(self.phase,i)
+            crank=QPointF(x+crank_x,crank_y)
             p.drawRoundedRect(QRectF(x-10,10,20,62),2,2)
             p.drawLine(QPointF(x-7,7),QPointF(x-7,0))
             p.drawLine(QPointF(x+7,7),QPointF(x+7,0))
             # Soft combustion plume, with no flashing full-card fill.
-            ignition=max(0,math.cos(angle))**8 if busy else .08
+            ignition=burn if busy else 0
             glow=QRadialGradient(QPointF(x,20),18)
-            flame=QColor(tint);flame.setAlpha(round(55*ignition) if busy else 7)
+            flame=QColor(tint);flame.setAlpha(round(55*ignition))
             glow.setColorAt(0,flame);flame.setAlpha(0);glow.setColorAt(1,flame)
             p.fillRect(QRectF(x-9,11,18,max(1,piston_y-13)),glow)
             piston=QColor(tint);piston.setAlpha(40 if busy else 15)

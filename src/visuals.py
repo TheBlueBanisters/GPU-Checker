@@ -1,5 +1,6 @@
 from themes import set_style, color as themed, is_day
 import math
+import time
 from card_motion import CardMotion
 from pathlib import Path
 from PySide6.QtCore import Qt,QRectF,QPointF,QVariantAnimation,QSize,QEvent,QEasingCurve
@@ -68,6 +69,7 @@ class MechPanel(QFrame):
         self.feedback_enabled=False
         self.hover_amount=0.
         self.click_progress=1.
+        self.ripples=[]
         self.feedback_point=QPointF(30,30)
         self.click_origin=QPointF(30,30)
         self.hover_animation=QVariantAnimation(self)
@@ -80,6 +82,7 @@ class MechPanel(QFrame):
         self.click_animation.setEndValue(1.)
         self.click_animation.setEasingCurve(QEasingCurve.Type.Linear)
         self.click_animation.valueChanged.connect(self._click_frame)
+        self.click_animation.finished.connect(self.clear_ripples)
 
     def enable_feedback(self):
         self.feedback_enabled=True
@@ -95,6 +98,8 @@ class MechPanel(QFrame):
         self.update()
 
     def _click_frame(self,value):
+        now=time.monotonic()
+        self.ripples=[wave for wave in self.ripples if now-wave[1]<2.4]
         self.click_progress=float(value)
         self.update()
 
@@ -113,9 +118,16 @@ class MechPanel(QFrame):
             return
         self.feedback_point=QPointF(point)
         self.click_origin=QPointF(point)
+        self.ripples.append((QPointF(point),time.monotonic()))
         self.click_animation.stop()
         self.click_progress=0.
         self.click_animation.start()
+        self.update()
+
+    def clear_ripples(self):
+        self.click_animation.stop()
+        self.ripples.clear()
+        self.click_progress=1.
         self.update()
 
     def eventFilter(self,watched,event):
@@ -124,7 +136,7 @@ class MechPanel(QFrame):
                 self.feedback_point=QPointF(watched.mapTo(self,event.position().toPoint()))
                 self._hover_to(1.)
                 self.update()
-            elif event.type()==QEvent.Type.MouseButtonPress and event.button()==Qt.MouseButton.LeftButton:
+            elif event.type() in (QEvent.Type.MouseButtonPress,QEvent.Type.MouseButtonDblClick) and event.button()==Qt.MouseButton.LeftButton:
                 self.pulse_at(watched.mapTo(self,event.position().toPoint()))
                 return True
         return super().eventFilter(watched,event)
@@ -152,11 +164,13 @@ class MechPanel(QFrame):
         else:
             super().mousePressEvent(event)
 
+    def mouseDoubleClickEvent(self,event):
+        self.mousePressEvent(event)
+
     def hideEvent(self,event):
         self.hover_animation.stop()
-        self.click_animation.stop()
+        self.clear_ripples()
         self.hover_amount=0.
-        self.click_progress=1.
         super().hideEvent(event)
 
     def panel_path(self,rect):
@@ -196,7 +210,7 @@ class MechPanel(QFrame):
         p.drawLine(QPointF(self.width()-1,self.height()-1),QPointF(self.width()-24,self.height()-1))
         if selected:
             p.drawLine(QPointF(1,13),QPointF(1,self.height()-16))
-        if self.feedback_enabled and (self.hover_amount>0 or self.click_progress<1):
+        if self.feedback_enabled and (self.hover_amount>0 or self.ripples):
             outline=notch_path(rect,10)
             p.setClipPath(outline)
             if self.hover_amount>0:
@@ -209,21 +223,22 @@ class MechPanel(QFrame):
                 p.drawPath(outline)
                 p.setPen(QPen(themed(102,255,227,int(90*self.hover_amount)),4))
                 p.drawLine(QPointF(1,1),QPointF(min(72,self.width()/2),1))
-            if self.click_progress<1:
-                t=self.click_progress
+            for origin,born in tuple(self.ripples):
+                t=min(1,max(0,(time.monotonic()-born)/2.4))
+                if t>=1: continue
                 # Smooth ease-in/out expansion and soft annuli, no sweeping scan bar.
                 travel=t*t*(3-2*t)
-                reach=max(math.hypot(x-self.click_origin.x(),y-self.click_origin.y())
+                reach=max(math.hypot(x-origin.x(),y-origin.y())
                           for x,y in ((0,0),(self.width(),0),(0,self.height()),(self.width(),self.height())))
                 radius=max(2,reach*travel)
                 fade=math.sin(math.pi*t)**1.5
-                glow=QRadialGradient(self.click_origin,radius)
+                glow=QRadialGradient(origin,radius)
                 for stop,alpha in ((0,0),(.55,0),(.72,7),(.84,22),(.94,9),(1,0)):
                     ink=themed('#75e6e1');ink.setAlpha(round(alpha*fade))
                     glow.setColorAt(stop,ink)
                 p.fillPath(outline,glow)
                 if t>.16:
-                    echo=QRadialGradient(self.click_origin,max(2,radius*.64))
+                    echo=QRadialGradient(origin,max(2,radius*.64))
                     for stop,alpha in ((0,0),(.7,0),(.86,10),(1,0)):
                         ink=themed('#75e6e1');ink.setAlpha(round(alpha*fade))
                         echo.setColorAt(stop,ink)

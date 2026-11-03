@@ -20,9 +20,7 @@ class HostList(QListWidget):
             tile=self.itemWidget(self.hovered_item)
             if tile:
                 tile._hover_to(0.)
-                tile.click_animation.stop()
-                tile.click_progress=1.
-                tile.update()
+                tile.clear_ripples()
         self.hovered_item=None
 
     def _wave(self):
