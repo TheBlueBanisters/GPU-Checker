@@ -1,11 +1,24 @@
 """List-owned feedback keeps passive host tiles clickable as ordinary list items."""
-from PySide6.QtCore import QTimer,QEvent,QPointF
-from PySide6.QtWidgets import QListWidget
+from PySide6.QtCore import QTimer,QEvent,QPointF,QVariantAnimation,QEasingCurve
+from PySide6.QtWidgets import QListWidget,QAbstractItemView,QApplication
 
 
 class HostList(QListWidget):
     def __init__(self,*args,**kwargs):
         super().__init__(*args,**kwargs)
+        self.setVerticalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
+        self.setViewportMargins(0,0,12,0)
+        self.scroll_animation=QVariantAnimation(self)
+        self.scroll_animation.setDuration(220)
+        self.scroll_animation.setEasingCurve(QEasingCurve.Type.OutCubic)
+        self.scroll_animation.valueChanged.connect(self._scroll_frame)
+        self.scroll_target=0
+        self._scroll_write=False
+        bar=self.verticalScrollBar()
+        bar.setSingleStep(24)
+        bar.sliderPressed.connect(self.stop_scroll)
+        bar.valueChanged.connect(self._scroll_changed)
+        bar.rangeChanged.connect(self.stop_scroll)
         self.hovered_item=None
         self.hover_point=QPointF()
         self.wave_timer=QTimer(self)
@@ -13,6 +26,46 @@ class HostList(QListWidget):
         self.wave_timer.timeout.connect(self._wave)
         self.setMouseTracking(True)
         self.viewport().setMouseTracking(True)
+
+    def stop_scroll(self,*args):
+        self.scroll_animation.stop()
+        self.scroll_target=self.verticalScrollBar().value()
+
+    def _scroll_changed(self,value):
+        if not self._scroll_write:
+            self.stop_scroll()
+
+    def _scroll_frame(self,value):
+        self._scroll_write=True
+        try:
+            self.verticalScrollBar().setValue(round(float(value)))
+        finally:
+            self._scroll_write=False
+
+    def wheelEvent(self,event):
+        bar=self.verticalScrollBar()
+        self.reset_hover()
+        if event.pixelDelta().y():
+            # Touchpad input already contains pixel motion and OS momentum.
+            self.stop_scroll()
+            bar.setValue(bar.value()-event.pixelDelta().y())
+            event.accept()
+            return
+        if not event.angleDelta().y():
+            super().wheelEvent(event)
+            return
+        lines=QApplication.wheelScrollLines()
+        distance=min(lines*24,max(24,self.viewport().height()*.9))
+        start=bar.value()
+        pending=self.scroll_target if self.scroll_animation.state()==QVariantAnimation.State.Running else start
+        target=max(bar.minimum(),min(bar.maximum(),pending-event.angleDelta().y()/120*distance))
+        self.scroll_animation.stop()
+        self.scroll_target=target
+        if target!=start:
+            self.scroll_animation.setStartValue(float(start))
+            self.scroll_animation.setEndValue(float(target))
+            self.scroll_animation.start()
+        event.accept()
 
     def reset_hover(self):
         self.wave_timer.stop()
@@ -56,10 +109,12 @@ class HostList(QListWidget):
         super().scrollContentsBy(dx,dy)
 
     def hideEvent(self,event):
+        self.stop_scroll()
         self.reset_hover()
         super().hideEvent(event)
 
     def clear(self):
         if hasattr(self,'wave_timer'):
+            self.stop_scroll()
             self.reset_hover()
         super().clear()

@@ -81,7 +81,7 @@ class Window(QMainWindow):
                 if p['id'] in seen:
                     p['id']=uuid.uuid4().hex
                 seen.add(p['id'])
-            profiles.save(self.items)
+            self.items=profiles.save(self.items)
         except Exception as exc:
             self.load_error=f'读取或保存配置失败：{exc}'
         self.profile_stamp=self.profiles_stamp()
@@ -330,6 +330,7 @@ class Window(QMainWindow):
         self.select_row(self.host_list.currentRow())
         self.filter_hosts()
         self.host_count.setText(f'{len(self.items):02d}')
+        self.write_runtime_state()
 
     def filter_hosts(self):
         needle=self.host_search.text().strip().lower()
@@ -561,15 +562,34 @@ class Window(QMainWindow):
             self.persist_session_preferences()
             s.start()
 
-    def profiles_stamp(self):
+    def write_runtime_state(self):
         try:
-            stat=(profiles.DATA/'profiles.json').stat()
-            return (stat.st_mtime_ns,stat.st_size)
+            profiles.atomic_json(DATA/'runtime_state.json',{
+                'version':'v13','pid':__import__('os').getpid(),
+                'exe':sys.executable,'app_data':str(DATA),'profile_data':str(profiles.DATA),
+                'loaded_count':len(self.items),'session_count':len(self.sessions),
+                'visible_row_count':self.host_list.count(),'load_error':self.load_error,
+                'names':[p['name'] for p in self.items],
+                'stamp':self.profile_stamp,
+            })
         except OSError:
-            return None
+            pass
+
+    def profiles_stamp(self):
+        stamps=[]
+        for name in ('profiles.json','host_catalog.json'):
+            try:
+                stat=(profiles.DATA/name).stat()
+                stamps.append((stat.st_mtime_ns,stat.st_size))
+            except OSError:
+                stamps.append(None)
+        return tuple(stamps)
 
     def reload_profiles(self):
-        if self.closing or self.profiles_stamp()==self.profile_stamp:
+        if self.closing:
+            return
+        stamp=self.profiles_stamp()
+        if stamp==self.profile_stamp and {p['id'] for p in self.items}==set(self.sessions) and self.host_list.count()==len(self.items):
             return
         try:
             incoming=profiles.load()
@@ -806,7 +826,7 @@ class Window(QMainWindow):
                 control.update()
 
     def help(self):
-        self.notify('GPU Checker v11 使用说明','左侧主机在后台持续采集，点击只切换右侧视图。暂停某台或全部暂停会保存状态，下次启动仍暂停；恢复后重新启用自动连接。正常关闭窗口不会改变暂停设置。\n\n编辑主机可勾选记住服务器密码，存入当前 Windows 用户的凭据管理器。程序启动时可自动取用；暂停不会删除已保存密码。取消勾选并保存可删除凭据。换电脑需重新输入。私钥口令仍仅保留在会话内存。\n\n无 GPU 主机显示在线并继续保活；驱动不可用与无设备分别显示。不提权，不控制用卡进程，不读取环境或完整命令行。\n\nOpenSSH 模式支持系统 config、Agent 和跳板机；内置密码模式仅直连。新主机需核对指纹，已有密钥变化拒绝连接。\n\n远端要求 Linux 与 Python 3.6+；GPU 遥测另需 NVIDIA 驱动和 nvidia-smi。\n\n配置位置：'+str(DATA)+'\nexe 旁放 portable.flag 可启用 data/ 便携模式。密码不进入 JSON、config 或迁移包，私钥请独立保管。')
+        self.notify('GPU Checker v13 使用说明','左侧主机在后台持续采集，点击只切换右侧视图。暂停某台或全部暂停会保存状态，下次启动仍暂停；恢复后重新启用自动连接。正常关闭窗口不会改变暂停设置。\n\n编辑主机可勾选记住服务器密码，存入当前 Windows 用户的凭据管理器。程序启动时可自动取用；暂停不会删除已保存密码。取消勾选并保存可删除凭据。换电脑需重新输入。私钥口令仍仅保留在会话内存。\n\n无 GPU 主机显示在线并继续保活；驱动不可用与无设备分别显示。不提权，不控制用卡进程，不读取环境或完整命令行。\n\nOpenSSH 模式支持系统 config、Agent 和跳板机；内置密码模式仅直连。新主机需核对指纹，已有密钥变化拒绝连接。\n\n远端要求 Linux 与 Python 3.6+；GPU 遥测另需 NVIDIA 驱动和 nvidia-smi。\n\n配置位置：'+str(DATA)+'\n主机条目：'+str(len(self.items))+'；列表：'+str(self.host_list.count())+'\n主机读取位置：'+str(profiles.DATA)+'\nexe 旁放 portable.flag 可启用 data/ 便携模式。密码不进入 JSON、config 或迁移包，私钥请独立保管。')
 
     def closeEvent(self,event):
         self.closing=True
