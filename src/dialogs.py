@@ -3,18 +3,48 @@ from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (QDialog,QVBoxLayout,QHBoxLayout,QFormLayout,QLineEdit,QComboBox,
     QSpinBox,QCheckBox,QPushButton,QDialogButtonBox,QFileDialog,QMessageBox,QPlainTextEdit)
 from backend import BASE, validate, config_path
-from visuals import label
+from visuals import label,MechPanel
+from window_chrome import TitleBar,install_handles,layout_handles
 import profiles
 import vault
 
 
-class HostDialog(QDialog):
+class MechDialog(QDialog):
+    def __init__(self,*args,**kwargs):
+        super().__init__(*args,**kwargs)
+        self.setWindowFlags(Qt.WindowType.Dialog|Qt.WindowType.FramelessWindowHint|Qt.WindowType.WindowSystemMenuHint|Qt.WindowType.WindowCloseButtonHint)
+        self.resize_handles=[]
+
+    def showEvent(self,event):
+        super().showEvent(event)
+        if not self.resize_handles:
+            self.resize_handles=install_handles(self)
+        layout_handles(self)
+
+    def resizeEvent(self,event):
+        super().resizeEvent(event)
+        if self.resize_handles:
+            layout_handles(self)
+
+
+def dialog_layout(dialog):
+    root=QVBoxLayout(dialog)
+    root.setContentsMargins(1,1,1,1)
+    root.setSpacing(0)
+    root.addWidget(TitleBar(dialog,dialog.windowTitle(),compact=True))
+    body=MechPanel()
+    body.setObjectName('glass')
+    root.addWidget(body,1)
+    return QVBoxLayout(body)
+
+
+class HostDialog(MechDialog):
     def __init__(self,parent=None,profile=None,credentials_only=False):
         super().__init__(parent)
         self.original=profiles.clean(profile or {})
         self.setWindowTitle("连接认证" if credentials_only else "编辑主机" if profile else "添加主机")
         self.setMinimumWidth(490)
-        box=QVBoxLayout(self)
+        box=dialog_layout(self)
         box.setContentsMargins(25,24,25,24)
         box.setSpacing(15)
         box.addWidget(label("SECURE CONNECTION","eyebrow"))
@@ -59,6 +89,7 @@ class HostDialog(QDialog):
         box.addWidget(self.retry)
         self.remember=QCheckBox('记住密码（Windows 凭据管理器，用于自动连接）')
         self.remember.setChecked(True)
+        self.remember.toggled.connect(self.update_secret_hint)
         box.addWidget(self.remember)
         hint=label('暂停状态会记住；已保存密码不进入 JSON、SSH config 或迁移包。换电脑后需重新输入。','muted')
         hint.setWordWrap(True)
@@ -76,6 +107,20 @@ class HostDialog(QDialog):
         self.secret.clear()
         self.secret.setEnabled(self.mode.currentIndex()!=0)
         self.remember.setEnabled(self.mode.currentIndex()==2)
+        self.update_secret_hint()
+
+    def update_secret_hint(self):
+        if self.mode.currentIndex()==0:
+            hint='由 OpenSSH / Agent 负责认证'
+        elif self.mode.currentIndex()==1:
+            hint='本次会话的私钥口令（可选）'
+        else:
+            try:
+                stored=bool(self.host.text().strip() and vault.get_password(self.profile()))
+            except Exception:
+                stored=False
+            hint='已记住密码；留空可继续使用' if stored else '保存到 Windows 凭据管理器' if self.remember.isChecked() else '仅供当前连接使用'
+        self.secret.setPlaceholderText(hint)
 
     def browse(self):
         path,_=QFileDialog.getOpenFileName(self,"选择私钥",str(Path.home()/'.ssh'))
@@ -108,12 +153,12 @@ class HostDialog(QDialog):
             QMessageBox.information(self,"检查连接信息",str(exc))
 
 
-class ConfigDialog(QDialog):
+class ConfigDialog(MechDialog):
     def __init__(self,parent=None):
         super().__init__(parent)
         self.setWindowTitle('粘贴 / 编辑 SSH config')
         self.resize(730,660)
-        box=QVBoxLayout(self)
+        box=dialog_layout(self)
         box.setContentsMargins(24,23,24,23)
         box.setSpacing(12)
         box.addWidget(label('SSH CONFIG EDITOR','eyebrow'))
@@ -129,7 +174,7 @@ class ConfigDialog(QDialog):
         row.addStretch()
         box.addLayout(row)
         self.editor=QPlainTextEdit()
-        self.editor.setStyleSheet("QPlainTextEdit {background:#0b1728;color:#bce5ee;border:1px solid #345570;border-radius:9px;padding:12px;font-family:Consolas;font-size:13px;}")
+        self.editor.setStyleSheet("QPlainTextEdit {background:#0b1728;color:#8ac4d5;border:1px solid #345570;border-radius:1px;padding:14px;font-family:'JetBrains Mono','ZCOOL QingKe HuangYou';font-size:13px;}")
         self.editor.setPlaceholderText('Host lab-gpu\n    HostName gpu.example.com\n    User yourname\n    Port 22\n    IdentityFile ~/.ssh/id_ed25519\n\n# 可以一次粘贴多个 Host 条目')
         box.addWidget(self.editor,1)
         self.report=label('尚未检查。保存前会自动校验，失败不会覆盖原配置。','muted')

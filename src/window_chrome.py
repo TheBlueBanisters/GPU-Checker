@@ -1,14 +1,15 @@
 """App-drawn title bar; Qt delegates movement and resizing to the OS."""
 from PySide6.QtCore import Qt,QRectF,QPointF,QSize
-from PySide6.QtGui import QColor,QPainter,QPen
+from PySide6.QtGui import QColor,QPainter,QPen,QLinearGradient
 from PySide6.QtWidgets import QWidget,QFrame,QLabel,QHBoxLayout,QAbstractButton
+from visuals import notch_path
 
 
 class WindowControl(QAbstractButton):
     def __init__(self,kind,window):
         super().__init__()
         self.kind,self.owner=kind,window
-        self.setFixedSize(46,38)
+        self.setFixedSize(38,30)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setAccessibleName({'min':'最小化','max':'最大化或还原','close':'关闭窗口'}[kind])
         self.setToolTip(self.accessibleName())
@@ -28,8 +29,8 @@ class WindowControl(QAbstractButton):
         if self.underMouse() or self.isDown():
             p.setBrush(QColor('#aa3f53' if self.kind=='close' else '#22374d'))
             p.setPen(Qt.PenStyle.NoPen)
-            p.drawRoundedRect(QRectF(3,4,self.width()-6,self.height()-8),7,7)
-        p.setPen(QPen(QColor('#e1edf7' if self.underMouse() else '#8fa5ba'),1.35))
+            p.drawPath(notch_path(QRectF(1,1,self.width()-2,self.height()-2),4))
+        p.setPen(QPen(QColor('#b7e1eb' if self.underMouse() else '#83a5bb'),1.6))
         x,y=self.width()/2,self.height()/2
         if self.kind=='min': p.drawLine(QPointF(x-5,y+3),QPointF(x+5,y+3))
         elif self.kind=='close':
@@ -40,34 +41,65 @@ class WindowControl(QAbstractButton):
 
 
 class TitleBar(QFrame):
-    def __init__(self,window):
+    def __init__(self,window,caption=None,compact=False):
         super().__init__()
         self.owner=window
+        self.compact=compact
         self.setObjectName('titleBar')
-        self.setFixedHeight(48)
-        self.setStyleSheet('QFrame#titleBar {background:#0c1728;border-bottom:1px solid #203249;}')
+        self.setFixedHeight(42 if compact else 48)
+        self.setStyleSheet('QFrame#titleBar {background:qlineargradient(x1:0,y1:0,x2:1,y2:0,stop:0 #0d1d30,stop:0.5 #0b1727,stop:1 #101d30);border-bottom:1px solid #243b50;}')
         row=QHBoxLayout(self)
-        row.setContentsMargins(19,0,8,0)
-        row.setSpacing(12)
+        row.setContentsMargins(20,0,12,0)
+        row.setSpacing(14)
         icon=QLabel()
-        icon.setPixmap(window.windowIcon().pixmap(QSize(23,23)))
-        title=QLabel('GPU Checker')
-        title.setStyleSheet('font-size:13px;font-weight:600;color:#d3e8f5')
-        subtitle=QLabel('多主机算力监控')
-        subtitle.setStyleSheet('font-size:11px;color:#708ba3')
+        icon.setPixmap(window.windowIcon().pixmap(QSize(22,22)))
+        title=QLabel(caption or 'GPU CHECKER')
+        title.setStyleSheet("font-family:'Orbitron','ZCOOL QingKe HuangYou';font-size:14px;font-weight:500;letter-spacing:1px;color:#88d5e2")
+        subtitle=QLabel('REMOTE MONITOR')
+        subtitle.setStyleSheet("font-family:'Orbitron';font-size:9px;letter-spacing:1px;color:#557b96")
         for widget in (icon,title,subtitle):
             widget.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
             row.addWidget(widget)
+        subtitle.setVisible(not compact)
         row.addStretch()
-        for kind in ('min','max','close'):
-            row.addWidget(WindowControl(kind,window))
+        self.fleet_label=QLabel('')
+        self.fleet_label.setStyleSheet('font-size:11px;color:#79a6ba')
+        self.clock_label=QLabel('')
+        self.clock_label.setStyleSheet("font-family:'Orbitron';font-size:10px;color:#527d94")
+        for label in (self.fleet_label,self.clock_label):
+            label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+            row.addWidget(label)
+            label.setVisible(not compact)
+        row.addSpacing(8)
+        controls=QFrame()
+        controls.setObjectName('windowControls')
+        controls.setFixedHeight(34)
+        controls.setStyleSheet('QFrame#windowControls {background:#122638;border:1px solid #31576b;border-radius:1px;}')
+        group=QHBoxLayout(controls)
+        group.setContentsMargins(2,1,2,1)
+        group.setSpacing(2)
+        for kind in (('close',) if compact else ('min','max','close')):
+            group.addWidget(WindowControl(kind,window))
+        row.addWidget(controls)
+
+    def resizeEvent(self,event):
+        super().resizeEvent(event)
+        self.clock_label.setVisible(not self.compact and event.size().width()>=1200)
+
+    def paintEvent(self,event):
+        super().paintEvent(event)
+        p=QPainter(self)
+        gradient=QLinearGradient(0,0,400,0)
+        gradient.setColorAt(0,QColor(89,221,217,150))
+        gradient.setColorAt(1,QColor(89,221,217,0))
+        p.fillRect(0,0,400,1,gradient)
 
     def mousePressEvent(self,event):
         if event.button()==Qt.MouseButton.LeftButton and self.owner.windowHandle():
             self.owner.windowHandle().startSystemMove()
 
     def mouseDoubleClickEvent(self,event):
-        if event.button()==Qt.MouseButton.LeftButton:
+        if not self.compact and event.button()==Qt.MouseButton.LeftButton:
             self.owner.showNormal() if self.owner.isMaximized() else self.owner.showMaximized()
 
 

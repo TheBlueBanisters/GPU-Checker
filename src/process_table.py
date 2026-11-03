@@ -3,7 +3,7 @@ from PySide6.QtCore import Qt,QRect
 from PySide6.QtGui import QColor,QFont
 from PySide6.QtWidgets import QHeaderView,QStyledItemDelegate,QStyle
 
-INSET=14
+INSET=20
 ALIGNMENTS=[Qt.AlignmentFlag.AlignCenter,Qt.AlignmentFlag.AlignLeft|Qt.AlignmentFlag.AlignVCenter,
     Qt.AlignmentFlag.AlignLeft|Qt.AlignmentFlag.AlignVCenter,Qt.AlignmentFlag.AlignCenter,
     Qt.AlignmentFlag.AlignRight|Qt.AlignmentFlag.AlignVCenter,Qt.AlignmentFlag.AlignLeft|Qt.AlignmentFlag.AlignVCenter,
@@ -28,6 +28,7 @@ class ProcessHeader(QHeaderView):
         painter.fillRect(rect,QColor('#16263a'))
         painter.setPen(QColor('#2b4056'))
         painter.drawLine(rect.bottomLeft(),rect.bottomRight())
+        painter.drawLine(rect.topRight(),rect.bottomRight())
         font=self.font()
         font.setWeight(QFont.Weight.Medium)
         painter.setFont(font)
@@ -44,6 +45,7 @@ class ProcessCells(QStyledItemDelegate):
         painter.fillRect(option.rect,QColor('#19485a') if option.state & QStyle.StateFlag.State_Selected else QColor('#0c192b'))
         painter.setPen(QColor('#203247'))
         painter.drawLine(option.rect.bottomLeft(),option.rect.bottomRight())
+        painter.drawLine(option.rect.topRight(),option.rect.bottomRight())
         painter.setFont(option.font)
         foreground=index.data(Qt.ItemDataRole.ForegroundRole)
         painter.setPen(foreground.color() if foreground else QColor('#d0dfec'))

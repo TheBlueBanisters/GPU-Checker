@@ -37,6 +37,29 @@ def test_action_buttons_reserve_space_for_icon_and_text(window):
     assert not b.keyboard_focus
 
 
+def test_host_actions_equal_and_process_count_separate(window):
+    w=window
+    w.show()
+    QApplication.processEvents()
+    buttons=(w.connect_button,w.edit_button,w.remove_button)
+    assert len({(b.width(),b.height()) for b in buttons})==1
+    w.connect_all()
+    w.selected.worker.data.emit(snapshot(1))
+    assert w.process_title.text()=='用卡进程' and w.process_count.text()=='01'
+    assert w.badge.height()==26
+
+
+def test_password_pause_resumes_without_edit_dialog(window,monkeypatch):
+    import profiles,vault
+    s=window.selected
+    s.profile['mode']=profiles.MODES[2]
+    s.pause()
+    monkeypatch.setattr(vault,'get_password',lambda p:'test-only-secret')
+    monkeypatch.setattr(window,'edit_host',lambda **k: (_ for _ in ()).throw(AssertionError('Unexpected edit dialog')))
+    window.toggle_selected()
+    assert s.running and s.desired and window.host_list.count()==2
+
+
 def test_custom_title_bar_maximize_restore_and_resize_handles(window):
     w=window
     assert w.windowFlags() & Qt.WindowType.FramelessWindowHint

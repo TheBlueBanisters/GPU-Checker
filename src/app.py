@@ -8,11 +8,11 @@ from PySide6.QtCore import Qt, QTimer, QSize,QEvent
 from PySide6.QtGui import QColor, QIcon, QPalette,QFontDatabase,QFont
 from PySide6.QtWidgets import (QApplication,QMainWindow,QWidget,QFrame,QLabel,QHBoxLayout,QVBoxLayout,
     QPushButton,QLineEdit,QListWidget,QListWidgetItem,QScrollArea,QTableWidget,QTableWidgetItem,
-    QHeaderView,QTextEdit,QSplitter,QFileDialog,QMessageBox,QDialog)
+    QHeaderView,QTextEdit,QSplitter,QFileDialog,QMessageBox,QDialog,QSizePolicy)
 from backend import DATA, config_path
 from sessions import HostSession
 from dialogs import HostDialog,ConfigDialog
-from visuals import STYLE,Backdrop,GPUCard,HostTile,ModernButton,label,fmt
+from visuals import STYLE,Backdrop,GPUCard,HostTile,ModernButton,StatusIndicator,MechPanel,label,fmt
 import profiles
 import vault
 from process_table import ProcessHeader,ProcessCells,ALIGNMENTS
@@ -76,14 +76,13 @@ class Window(QMainWindow):
         brand=QHBoxLayout()
         icon=QLabel()
         icon.setPixmap(QIcon(str(ASSETS/'app.ico')).pixmap(QSize(36,36)))
-        brand.addWidget(icon)
-        brand.addWidget(label('GPU Checker','brand'))
+        brand.addWidget(label('HOST DIRECTORY','brand'))
         brand.addStretch()
         sb.addLayout(brand)
-        sb.addWidget(label('MULTI-HOST  /  TELEMETRY','eyebrow'))
+        sb.addWidget(label('MULTI-HOST / SECURE SHELL','eyebrow'))
         sb.addSpacing(18)
         row=QHBoxLayout()
-        row.addWidget(label('主机舰队','brand'))
+        row.addWidget(label('主机舰队','section'))
         self.host_count=label('00','eyebrow')
         row.addStretch()
         row.addWidget(self.host_count)
@@ -112,16 +111,9 @@ class Window(QMainWindow):
         content=QVBoxLayout()
         content.setContentsMargins(27,22,27,19)
         content.setSpacing(11)
-        top=QHBoxLayout()
-        top.addWidget(label('COMPUTE OBSERVATORY','eyebrow'))
-        top.addStretch()
-        self.fleet=label('0 台在线 / 0 台主机','muted')
-        self.clock=label('','eyebrow')
-        top.addWidget(self.fleet)
-        top.addSpacing(23)
-        top.addWidget(self.clock)
-        content.addLayout(top)
-        hero=QFrame()
+        self.fleet=self.title_bar.fleet_label
+        self.clock=self.title_bar.clock_label
+        hero=MechPanel()
         hero.setObjectName('glass')
         hb=QVBoxLayout(hero)
         hb.setContentsMargins(22,15,22,15)
@@ -133,26 +125,30 @@ class Window(QMainWindow):
         titles.addWidget(self.heading)
         titles.addWidget(self.subtitle)
         header.addLayout(titles,1)
-        self.badge=label('● 尚未连接','badge')
-        self.badge.setMaximumHeight(37)
-        self.badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.badge=StatusIndicator()
         header.addWidget(self.badge)
         hb.addLayout(header)
         actions=QHBoxLayout()
         self.telemetry=label('SECURE SHELL  /  LIVE TELEMETRY','eyebrow')
+        self.telemetry.setMinimumWidth(0)
+        self.telemetry.setSizePolicy(QSizePolicy.Policy.Ignored,QSizePolicy.Policy.Preferred)
         actions.addWidget(self.telemetry)
         actions.addStretch()
         self.connect_button=self.button('连接主机',self.toggle_selected,True)
         self.edit_button=self.button('编辑',self.edit_host)
         self.remove_button=self.button('移除',self.remove_host)
         for button in (self.connect_button,self.edit_button,self.remove_button):
+            button.ghost=False
+            button.setProperty('fixedAction',True)
+            button.setFixedSize(140,42)
             actions.addWidget(button)
+        actions.setSpacing(12)
         hb.addLayout(actions)
         content.addWidget(hero)
         metrics=QHBoxLayout()
         self.stats=[]
         for title in ('显卡数量','平均 GPU 利用率','显存占用 / 总量','用卡进程'):
-            frame=QFrame()
+            frame=MechPanel()
             frame.setObjectName('glass')
             box=QVBoxLayout(frame)
             box.setContentsMargins(17,12,17,12)
@@ -163,7 +159,7 @@ class Window(QMainWindow):
             metrics.addWidget(frame,1)
         content.addLayout(metrics)
         row=QHBoxLayout()
-        row.addWidget(label('GPU 遥测','brand'))
+        row.addWidget(label('GPU 遥测','section'))
         row.addStretch()
         row.addWidget(label('60 SAMPLES  /  UTILIZATION','eyebrow'))
         content.addLayout(row)
@@ -180,8 +176,13 @@ class Window(QMainWindow):
         self.card_scroll.setWidget(self.card_widget)
         content.addWidget(self.card_scroll)
         row=QHBoxLayout()
-        self.process_title=label('实时进程','brand')
+        self.process_title=label('用卡进程','section')
         row.addWidget(self.process_title)
+        self.process_count=label('00','count')
+        self.process_count.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.process_count.setFixedSize(52,30)
+        row.addSpacing(8)
+        row.addWidget(self.process_count)
         row.addStretch()
         self.search=QLineEdit()
         self.search.setPlaceholderText('筛选用户、PID、进程或目录…')
@@ -195,17 +196,18 @@ class Window(QMainWindow):
         self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
         self.table.verticalHeader().hide()
-        self.table.verticalHeader().setDefaultSectionSize(38)
+        self.table.verticalHeader().setDefaultSectionSize(44)
         self.table.setWordWrap(False)
         self.table.setShowGrid(False)
         self.table.setHorizontalHeader(ProcessHeader(self.table))
         self.table.setItemDelegate(ProcessCells(self.table))
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
-        for i,width in enumerate((56,100,112,64,118,138,260,104)):
+        for i,width in enumerate((70,120,130,80,140,165,260,130)):
             self.table.setColumnWidth(i,width)
             self.table.horizontalHeaderItem(i).setTextAlignment(ALIGNMENTS[i])
         self.table.horizontalHeader().setSectionResizeMode(6,QHeaderView.ResizeMode.Stretch)
         self.table.horizontalHeader().setStretchLastSection(False)
+        self.table.setHorizontalScrollMode(QTableWidget.ScrollMode.ScrollPerPixel)
         self.table.itemSelectionChanged.connect(self.show_details)
         self.details=QTextEdit()
         self.details.setReadOnly(True)
@@ -333,7 +335,7 @@ class Window(QMainWindow):
         self.connect_button.setText('暂停监控' if session.desired else '恢复监控')
         self.badge.setText('● '+session.state)
         color='#68f6cf' if session.fresh else '#ffcb84' if session.desired or session.state in ('连接异常','待认证') else '#91a4be'
-        self.badge.setStyleSheet(f'color:{color}')
+        self.badge.setTone(color)
         self.status_text.setText(session.message+(' · 最近采样 '+str(int(time.monotonic()-session.received))+' 秒前' if session.received else ''))
         self.telemetry.setText(f'SECURE SHELL  /  {p["interval"]}s INTERVAL  /  后台独立监控')
 
@@ -412,7 +414,17 @@ class Window(QMainWindow):
             self.show_details()
         elif selected:
             self.details.setPlainText('原选中进程已退出、发生变化或被筛选隐藏。')
-        self.process_title.setText(f'实时进程  /  {len(rows):02d}')
+        self.process_count.setText(f'{len(rows):02d}')
+        self.layout_process_columns()
+
+    def layout_process_columns(self):
+        header=self.table.horizontalHeader()
+        remaining=self.table.viewport().width()-sum(header.sectionSize(i) for i in range(8) if i!=6)
+        mode=QHeaderView.ResizeMode.Stretch if remaining>=260 else QHeaderView.ResizeMode.Interactive
+        if header.sectionResizeMode(6)!=mode:
+            header.setSectionResizeMode(6,mode)
+        if mode==QHeaderView.ResizeMode.Interactive:
+            header.resizeSection(6,260)
 
     def show_details(self):
         row=self.table.currentRow()
@@ -456,7 +468,7 @@ class Window(QMainWindow):
         if s.desired:
             s.pause()
             self.persist_session_preferences()
-        elif s.profile['mode']==profiles.MODES[2] or s.state=='连接异常':
+        elif (s.profile['mode']==profiles.MODES[2] and not vault.get_password(s.profile)) or s.state=='连接异常':
             self.edit_host(credentials_only=True)
         else:
             s.profile['autoconnect']=True
@@ -640,6 +652,8 @@ class Window(QMainWindow):
         super().resizeEvent(event)
         if hasattr(self,'card_scroll'):
             self.size_cards()
+        if hasattr(self,'table'):
+            QTimer.singleShot(0,self.layout_process_columns)
         if getattr(self,'resize_handles',None):
             layout_handles(self)
 
@@ -651,7 +665,7 @@ class Window(QMainWindow):
                 control.update()
 
     def help(self):
-        self.notify('GPU Checker v3 使用说明','左侧主机在后台持续采集，点击只切换右侧视图。暂停某台或全部暂停会保存状态，下次启动仍暂停；恢复后重新启用自动连接。正常关闭窗口不会改变暂停设置。\n\n编辑主机可勾选记住服务器密码，存入当前 Windows 用户的凭据管理器。程序启动时可自动取用；暂停不会删除已保存密码。取消勾选并保存可删除凭据。换电脑需重新输入。私钥口令仍仅保留在会话内存。\n\n无 GPU 主机显示在线并继续保活；驱动不可用与无设备分别显示。不提权，不控制用卡进程，不读取环境或完整命令行。\n\nOpenSSH 模式支持系统 config、Agent 和跳板机；内置密码模式仅直连。新主机需核对指纹，已有密钥变化拒绝连接。\n\n远端要求 Linux 与 Python 3.6+；GPU 遥测另需 NVIDIA 驱动和 nvidia-smi。\n\n配置位置：'+str(DATA)+'\nexe 旁放 portable.flag 可启用 data/ 便携模式。密码不进入 JSON、config 或迁移包，私钥请独立保管。')
+        self.notify('GPU Checker v5 使用说明','左侧主机在后台持续采集，点击只切换右侧视图。暂停某台或全部暂停会保存状态，下次启动仍暂停；恢复后重新启用自动连接。正常关闭窗口不会改变暂停设置。\n\n编辑主机可勾选记住服务器密码，存入当前 Windows 用户的凭据管理器。程序启动时可自动取用；暂停不会删除已保存密码。取消勾选并保存可删除凭据。换电脑需重新输入。私钥口令仍仅保留在会话内存。\n\n无 GPU 主机显示在线并继续保活；驱动不可用与无设备分别显示。不提权，不控制用卡进程，不读取环境或完整命令行。\n\nOpenSSH 模式支持系统 config、Agent 和跳板机；内置密码模式仅直连。新主机需核对指纹，已有密钥变化拒绝连接。\n\n远端要求 Linux 与 Python 3.6+；GPU 遥测另需 NVIDIA 驱动和 nvidia-smi。\n\n配置位置：'+str(DATA)+'\nexe 旁放 portable.flag 可启用 data/ 便携模式。密码不进入 JSON、config 或迁移包，私钥请独立保管。')
 
     def closeEvent(self,event):
         self.closing=True
@@ -673,7 +687,7 @@ def configure_app(app):
             QFontDatabase.addApplicationFont(str(path))
         app.setProperty('bundledFontsLoaded',True)
     font=QFont()
-    font.setFamilies(['Inter','Noto Sans SC'])
+    font.setFamilies(['Rajdhani Medium','Rajdhani','ZCOOL QingKe HuangYou','Noto Sans SC'])
     font.setPointSize(10)
     app.setFont(font)
     palette=QPalette()

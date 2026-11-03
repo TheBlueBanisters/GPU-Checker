@@ -4,25 +4,23 @@ from PySide6.QtGui import QColor, QPainter, QPainterPath, QPen, QLinearGradient,
 from PySide6.QtWidgets import QWidget, QFrame, QLabel, QVBoxLayout, QHBoxLayout, QProgressBar,QPushButton,QSizePolicy
 
 STYLE = """
-QWidget {font-family:'Inter','Noto Sans SC';font-size:13px;color:#d8e5f1;background:transparent;}
+QWidget {font-family:'Rajdhani Medium','Rajdhani','ZCOOL QingKe HuangYou','Noto Sans SC';font-size:15px;color:#a9cbdc;background:transparent;}
 QDialog,QMessageBox {background:#101b2d;}
 QLabel {border:0;background:transparent;}
-QLabel#muted {color:#7f96b1;font-size:12px;}
-QLabel#eyebrow {color:#7aa5b6;font-family:'Inter','Noto Sans SC';font-size:11px;letter-spacing:1px;}
-QLabel#brand {color:#e7f8ff;font-size:20px;font-weight:700;}
-QLabel#heading {color:#effbff;font-size:30px;font-weight:700;}
-QLabel#badge {color:#68f6cf;background:rgba(29,201,158,22);border:1px solid #1b6b62;border-radius:9px;padding:7px 12px;}
+QLabel#muted {color:#7498b1;font-size:14px;}
+QLabel#eyebrow {color:#5d9aaf;font-family:'Rajdhani Medium','Rajdhani','ZCOOL QingKe HuangYou';font-size:13px;letter-spacing:1px;}
+QLabel#brand {color:#8ad5e3;font-family:'Orbitron','ZCOOL QingKe HuangYou';font-size:16px;font-weight:500;}
+QLabel#section {color:#69cddd;font-family:'ZCOOL QingKe HuangYou','Noto Sans SC';font-size:24px;font-weight:400;letter-spacing:1px;}
+QLabel#count {color:#75e6e1;background:#102b39;border:1px solid #28515d;border-radius:1px;font-family:'Orbitron';font-size:14px;font-weight:500;}
+QLabel#heading {color:#a0dfea;font-family:'Orbitron','ZCOOL QingKe HuangYou','Noto Sans SC';font-size:27px;font-weight:500;}
 QFrame#sidebar {background:rgba(9,17,32,235);border-right:1px solid #20334d;}
-QFrame#glass {background:rgba(18,32,54,195);border:1px solid #263d59;border-radius:13px;}
-QFrame#card {background:rgba(17,33,55,205);border:1px solid #29445e;border-top:2px solid #36ced9;border-radius:12px;}
-QFrame#hostTile {background:rgba(17,30,50,160);border:1px solid #24364f;border-radius:10px;}
-QFrame#hostTile[selected="true"] {background:rgba(26,68,82,165);border:1px solid #4be7df;border-left:3px solid #66ffe5;}
-QLabel#metric {font-family:'JetBrains Mono';font-size:32px;font-weight:500;color:#6bf8e0;}
-QLabel#stat {font-family:'Inter','Noto Sans SC';font-size:23px;font-weight:600;color:#e6f8ff;}
-QLineEdit,QSpinBox,QComboBox {background:#0c1729;border:1px solid #2c435f;border-radius:7px;padding:8px;min-height:20px;selection-background-color:#15798a;}
+QFrame#glass,QFrame#card,QFrame#hostTile {background:transparent;border:0;}
+QLabel#metric {font-family:'Orbitron';font-size:30px;font-weight:500;color:#6bf8e0;}
+QLabel#stat {font-family:'Orbitron','ZCOOL QingKe HuangYou';font-size:21px;font-weight:500;color:#8fc8de;}
+QLineEdit,QSpinBox,QComboBox {background:#0b192a;border:1px solid #30536b;border-bottom:2px solid #345d73;border-radius:1px;padding:9px 12px;min-height:20px;selection-background-color:#15798a;}
 QLineEdit:focus,QSpinBox:focus,QComboBox:focus {border:1px solid #54e6e1;}
 QComboBox QAbstractItemView {background:#14233a;color:#d5edff;selection-background-color:#24566b;}
-QPushButton {background:#1b2a3c;border:1px solid #304256;border-radius:9px;padding:9px 16px;font-weight:500;}
+QPushButton {background:#142c3d;border:1px solid #365d74;border-radius:1px;padding:10px 20px;font-weight:400;}
 QPushButton:hover {background:#263c50;border-color:#52677d;color:#f0faff;}
 QPushButton:pressed {background:#112137;}
 QPushButton#primary {background:#64e5c7;border:1px solid #64e5c7;color:#072a29;}
@@ -30,26 +28,55 @@ QPushButton#primary:hover {background:#8df2d9;border-color:#8df2d9;}
 QPushButton#danger {color:#ffb0b7;border-color:#694152;}
 QPushButton:disabled {color:#50647c;border-color:#25354d;background:#132035;}
 QListWidget {border:0;outline:0;background:transparent;}
-QListWidget::item {border:0;background:transparent;padding:0;margin:0 0 9px 0;}
+QListWidget::item {border:0;background:transparent;padding:0;margin:0 0 10px 0;}
 QListWidget::item:selected {background:transparent;}
-QProgressBar {background:#1b3047;border:0;border-radius:3px;height:5px;max-height:5px;}
-QProgressBar::chunk {background:qlineargradient(x1:0,y1:0,x2:1,y2:0,stop:0 #187f9c,stop:1 #65ffe0);border-radius:3px;}
-QTableWidget {background:rgba(11,22,39,215);border:1px solid #263c56;border-radius:10px;gridline-color:#22344e;selection-background-color:#194f62;selection-color:#e6ffff;}
+QProgressBar {background:#1b3047;border:0;border-radius:0;height:5px;max-height:5px;}
+QProgressBar::chunk {background:qlineargradient(x1:0,y1:0,x2:1,y2:0,stop:0 #187f9c,stop:1 #65ffe0);border-radius:0;}
+QTableWidget {background:rgba(11,22,39,215);border:1px solid #315267;border-radius:1px;gridline-color:#2b4b60;selection-background-color:#194f62;selection-color:#a8efeb;}
 QHeaderView::section {background:#15263c;color:#8eacc6;padding:11px 8px;border:0;border-bottom:1px solid #30465f;font-weight:600;}
 QTableWidget::item {padding:7px;border-bottom:1px solid #1c2d44;}
 QTableWidget::item:selected {background:#17485b;}
-QTextEdit {background:rgba(13,26,45,215);border:1px solid #263f58;border-radius:10px;padding:10px;font-family:'JetBrains Mono','Noto Sans SC';font-size:12px;color:#b4cbdc;}
+QTextEdit {background:rgba(13,26,45,215);border:1px solid #315267;border-radius:1px;padding:12px;font-family:'JetBrains Mono','ZCOOL QingKe HuangYou';font-size:13px;color:#91b8cc;}
 QScrollArea {border:0;background:transparent;}
 QScrollBar:horizontal {height:7px;background:#102139;border:0;}
 QScrollBar:vertical {width:7px;background:#102139;border:0;}
-QScrollBar::handle {background:#35576c;border-radius:3px;min-width:25px;min-height:25px;}
+QScrollBar::handle {background:#3c6c80;border-radius:0;min-width:25px;min-height:25px;}
 QScrollBar::add-line,QScrollBar::sub-line {width:0;height:0;}
 QCheckBox {spacing:8px;}
-QCheckBox::indicator {width:16px;height:16px;border:1px solid #52738d;border-radius:4px;background:#0c1729;}
+QCheckBox::indicator {width:16px;height:16px;border:1px solid #52738d;border-radius:0;background:#0c1729;}
 QCheckBox::indicator:checked {background:#29b8b0;border:1px solid #8cf9e1;}
-QSplitter::handle {background:transparent;height:7px;}
+QSplitter::handle {background:#183547;height:5px;}
 QToolTip {background:#182b43;color:#e0f5ff;border:1px solid #3f718c;padding:7px;}
 """
+
+
+def notch_path(rect,cut=9):
+    x,y,w,h=rect.x(),rect.y(),rect.width(),rect.height()
+    p=QPainterPath()
+    p.moveTo(x,y);p.lineTo(x+w-cut,y);p.lineTo(x+w,y+cut)
+    p.lineTo(x+w,y+h);p.lineTo(x+cut,y+h);p.lineTo(x,y+h-cut);p.closeSubpath()
+    return p
+
+
+class MechPanel(QFrame):
+    def paintEvent(self,event):
+        p=QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        role=self.objectName()
+        selected=bool(self.property('selected'))
+        rect=QRectF(0.7,0.7,self.width()-1.4,self.height()-1.4)
+        gradient=QLinearGradient(0,0,self.width(),self.height())
+        gradient.setColorAt(0,QColor(22,61,76,230) if selected else QColor(17,37,56,222))
+        gradient.setColorAt(1,QColor(12,28,46,225))
+        p.setBrush(gradient)
+        p.setPen(QPen(QColor('#58c8ce' if selected else '#2c5368'),1))
+        p.drawPath(notch_path(rect,10))
+        accent=QColor('#64e5d8' if selected else '#3e98ac' if role=='card' else '#315e76')
+        p.setPen(QPen(accent,2))
+        p.drawLine(QPointF(1,1),QPointF(min(47,self.width()/3),1))
+        p.drawLine(QPointF(self.width()-1,self.height()-1),QPointF(self.width()-24,self.height()-1))
+        if selected:
+            p.drawLine(QPointF(1,13),QPointF(1,self.height()-16))
 
 
 class ModernButton(QPushButton):
@@ -79,7 +106,8 @@ class ModernButton(QPushButton):
 
     def setText(self,text):
         super().setText(text)
-        self.setMinimumWidth(self.sizeHint().width())
+        if not self.property('fixedAction'):
+            self.setMinimumWidth(self.sizeHint().width())
         self.updateGeometry()
 
     def focusInEvent(self,event):
@@ -116,7 +144,7 @@ class ModernButton(QPushButton):
             color=color.darker(115)
         p.setBrush(color)
         p.setPen(QPen(QColor('#41576c' if not self.primary else '#7eefd4'),1) if not self.ghost else Qt.PenStyle.NoPen)
-        p.drawRoundedRect(QRectF(1,1,self.width()-2,self.height()-2),9,9)
+        p.drawPath(notch_path(QRectF(1,1,self.width()-2,self.height()-2),7))
         fg=QColor('#092f2b' if self.primary else '#ceddea') if self.isEnabled() else QColor('#56677c')
         p.setPen(fg)
         text=self.text().lstrip('+ ')
@@ -157,7 +185,7 @@ class ModernButton(QPushButton):
         if self.hasFocus() and self.keyboard_focus:
             p.setBrush(Qt.BrushStyle.NoBrush)
             p.setPen(QPen(QColor('#b1f6e5'),1))
-            p.drawRoundedRect(QRectF(4,4,self.width()-8,self.height()-8),6,6)
+            p.drawPath(notch_path(QRectF(4,4,self.width()-8,self.height()-8),5))
 
 
 def label(text, kind=None):
@@ -225,7 +253,7 @@ class Sparkline(QWidget):
             p.drawEllipse(last[0]-2,last[1]-2,4,4)
 
 
-class GPUCard(QFrame):
+class GPUCard(MechPanel):
     def __init__(self,gpu,history=()):
         super().__init__()
         self.setObjectName("card")
@@ -261,7 +289,7 @@ class GPUCard(QFrame):
         self.thermal.setToolTip(f"风扇：{g['fan']}")
 
 
-class HostTile(QFrame):
+class HostTile(MechPanel):
     def __init__(self,session):
         super().__init__()
         self.setObjectName("hostTile")
@@ -271,8 +299,9 @@ class HostTile(QFrame):
         box.setSpacing(7)
         row=QHBoxLayout()
         self.name=label(session.profile['name'])
-        self.name.setStyleSheet("font-weight:700;font-size:14px;color:#dff5ff")
-        self.dot=label("●")
+        self.name.setStyleSheet("font-family:'Rajdhani Medium','Rajdhani','ZCOOL QingKe HuangYou';font-weight:500;font-size:17px;color:#95cfe0")
+        self.dot=StatusIndicator('')
+        self.dot.setFixedSize(10,16)
         row.addWidget(self.name,1)
         row.addWidget(self.dot)
         box.addLayout(row)
@@ -294,7 +323,7 @@ class HostTile(QFrame):
         self.name.setToolTip(name)
         endpoint=session.profile['host']
         self.endpoint.setText(endpoint[:29]+('…' if len(endpoint)>29 else ''))
-        self.dot.setStyleSheet("color:"+("#64ffce" if session.fresh else "#ffbf68" if session.desired else "#637792"))
+        self.dot.setTone('#5bdac4' if session.fresh else '#c8a572' if session.desired else '#5c798c')
         if session.snapshot:
             gs=session.snapshot['gpus']
             utils=[g['util'] for g in gs if g['util'] is not None]
@@ -303,6 +332,40 @@ class HostTile(QFrame):
             self.bar.setValue(int(avg or 0))
             self.bar.setVisible(bool(gs))
         else:
-            self.summary.setText(session.state+"  ·  等待遥测")
+            self.summary.setText('已暂停 · 随时可恢复' if not session.profile['autoconnect'] and not session.desired else session.state+' · 等待遥测')
             self.bar.setValue(0)
+            self.bar.setVisible(session.desired)
         self.setToolTip(session.message)
+
+
+class StatusIndicator(QWidget):
+    def __init__(self,text='尚未连接'):
+        super().__init__()
+        self.value=text
+        self.tone=QColor('#78a2b4')
+        self.setFixedHeight(26)
+        self.setText(text)
+
+    def setText(self,text):
+        self.value=text.removeprefix('● ')
+        self.setFixedWidth(self.fontMetrics().horizontalAdvance(self.value)+25)
+        self.update()
+
+    def text(self):
+        return self.value
+
+    def setTone(self,color):
+        self.tone=QColor(color)
+        self.update()
+
+    def paintEvent(self,event):
+        p=QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(self.tone)
+        path=QPainterPath()
+        path.moveTo(1,self.height()/2);path.lineTo(5,self.height()/2-4);path.lineTo(9,self.height()/2);path.lineTo(5,self.height()/2+4);path.closeSubpath()
+        p.drawPath(path)
+        p.setPen(self.tone)
+        p.setFont(self.font())
+        p.drawText(QRectF(17,0,self.width()-17,self.height()),Qt.AlignmentFlag.AlignVCenter,self.value)

@@ -152,4 +152,9 @@ def test_pause_is_restored_on_next_launch(window):
     fresh.autostart()
     a,b=list(fresh.sessions.values())
     assert not a.running and a.state=='已暂停' and b.running
+    assert fresh.host_list.count()==w.host_list.count()==2
+    assert not fresh.host_list.item(0).isHidden()
+    assert '已暂停' in fresh.tiles[a.id].summary.text()
+    fresh.toggle_selected()
+    assert a.running and fresh.host_list.count()==2
     fresh.close()
