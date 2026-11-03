@@ -11,6 +11,8 @@ from dialogs import HostDialog,ConfigDialog
 application=QApplication([])
 ui.configure_app(application)
 items=profiles.load()
+for item in items:
+    item['autoconnect']=True  # Test copy only; preserve the user's saved pause choices.
 original=backend.DATA
 temp=tempfile.TemporaryDirectory()
 for module in (ui,profiles,backend):

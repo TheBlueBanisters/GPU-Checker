@@ -4,7 +4,7 @@ import sys
 import tempfile
 import time
 import uuid
-from PySide6.QtCore import Qt, QTimer, QSize
+from PySide6.QtCore import Qt, QTimer, QSize,QEvent
 from PySide6.QtGui import QColor, QIcon, QPalette,QFontDatabase,QFont
 from PySide6.QtWidgets import (QApplication,QMainWindow,QWidget,QFrame,QLabel,QHBoxLayout,QVBoxLayout,
     QPushButton,QLineEdit,QListWidget,QListWidgetItem,QScrollArea,QTableWidget,QTableWidgetItem,
@@ -15,6 +15,8 @@ from dialogs import HostDialog,ConfigDialog
 from visuals import STYLE,Backdrop,GPUCard,HostTile,ModernButton,label,fmt
 import profiles
 import vault
+from process_table import ProcessHeader,ProcessCells,ALIGNMENTS
+from window_chrome import TitleBar,install_handles,layout_handles
 
 ASSETS=Path(getattr(sys,'_MEIPASS',Path(__file__).parent.parent))/'assets'
 
@@ -24,7 +26,9 @@ class Window(QMainWindow):
         super().__init__()
         self.setWindowTitle('GPU Checker · 多主机算力监控')
         self.setWindowIcon(QIcon(str(ASSETS/'app.ico')))
-        self.resize(1480,950)
+        self.setWindowFlags(Qt.WindowType.Window|Qt.WindowType.FramelessWindowHint|Qt.WindowType.WindowMinMaxButtonsHint|Qt.WindowType.WindowCloseButtonHint|Qt.WindowType.WindowSystemMenuHint)
+        self.resize_handles=[]
+        self.resize(1480,1000)
         self.setMinimumSize(1080,760)
         self.session_factory=session_factory
         self.sessions={}
@@ -50,7 +54,16 @@ class Window(QMainWindow):
         except Exception as exc:
             self.load_error=f'读取或保存配置失败：{exc}'
         central=Backdrop()
-        self.setCentralWidget(central)
+        shell=QWidget()
+        shell.setObjectName('shell')
+        shell.setStyleSheet('QWidget#shell {background:#0b1424;border:1px solid #263a50;}')
+        self.setCentralWidget(shell)
+        outer=QVBoxLayout(shell)
+        outer.setContentsMargins(1,1,1,1)
+        outer.setSpacing(0)
+        self.title_bar=TitleBar(self)
+        outer.addWidget(self.title_bar)
+        outer.addWidget(central,1)
         root=QHBoxLayout(central)
         root.setContentsMargins(0,0,0,0)
         root.setSpacing(0)
@@ -185,10 +198,14 @@ class Window(QMainWindow):
         self.table.verticalHeader().setDefaultSectionSize(38)
         self.table.setWordWrap(False)
         self.table.setShowGrid(False)
+        self.table.setHorizontalHeader(ProcessHeader(self.table))
+        self.table.setItemDelegate(ProcessCells(self.table))
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
-        for i,width in enumerate((50,90,95,50,95,140,255,85)):
+        for i,width in enumerate((56,100,112,64,118,138,260,104)):
             self.table.setColumnWidth(i,width)
-        self.table.horizontalHeader().setStretchLastSection(True)
+            self.table.horizontalHeaderItem(i).setTextAlignment(ALIGNMENTS[i])
+        self.table.horizontalHeader().setSectionResizeMode(6,QHeaderView.ResizeMode.Stretch)
+        self.table.horizontalHeader().setStretchLastSection(False)
         self.table.itemSelectionChanged.connect(self.show_details)
         self.details=QTextEdit()
         self.details.setReadOnly(True)
@@ -210,6 +227,8 @@ class Window(QMainWindow):
         self.timer=QTimer(self)
         self.timer.timeout.connect(self.tick)
         self.timer.start(1000)
+        self.resize_handles=install_handles(self)
+        layout_handles(self)
         self.tick()
         if self.load_error:
             QTimer.singleShot(100,lambda: self.notify('配置读取提示',self.load_error))
@@ -379,6 +398,7 @@ class Window(QMainWindow):
             values=[p['gpu'],p['pid'],p.get('user','—'),p['kind'],fmt(p['memory']),p['name'].rsplit('/',1)[-1],p.get('cwd','—'),p.get('ppid','—')]
             for col,value in enumerate(values):
                 item=QTableWidgetItem(str(value))
+                item.setTextAlignment(ALIGNMENTS[col])
                 item.setToolTip(str(value))
                 if col==1:
                     item.setData(Qt.ItemDataRole.UserRole,identity)
@@ -620,6 +640,15 @@ class Window(QMainWindow):
         super().resizeEvent(event)
         if hasattr(self,'card_scroll'):
             self.size_cards()
+        if getattr(self,'resize_handles',None):
+            layout_handles(self)
+
+    def changeEvent(self,event):
+        super().changeEvent(event)
+        if event.type()==QEvent.Type.WindowStateChange and getattr(self,'resize_handles',None):
+            layout_handles(self)
+            for control in self.title_bar.findChildren(QWidget):
+                control.update()
 
     def help(self):
         self.notify('GPU Checker v3 使用说明','左侧主机在后台持续采集，点击只切换右侧视图。暂停某台或全部暂停会保存状态，下次启动仍暂停；恢复后重新启用自动连接。正常关闭窗口不会改变暂停设置。\n\n编辑主机可勾选记住服务器密码，存入当前 Windows 用户的凭据管理器。程序启动时可自动取用；暂停不会删除已保存密码。取消勾选并保存可删除凭据。换电脑需重新输入。私钥口令仍仅保留在会话内存。\n\n无 GPU 主机显示在线并继续保活；驱动不可用与无设备分别显示。不提权，不控制用卡进程，不读取环境或完整命令行。\n\nOpenSSH 模式支持系统 config、Agent 和跳板机；内置密码模式仅直连。新主机需核对指纹，已有密钥变化拒绝连接。\n\n远端要求 Linux 与 Python 3.6+；GPU 遥测另需 NVIDIA 驱动和 nvidia-smi。\n\n配置位置：'+str(DATA)+'\nexe 旁放 portable.flag 可启用 data/ 便携模式。密码不进入 JSON、config 或迁移包，私钥请独立保管。')

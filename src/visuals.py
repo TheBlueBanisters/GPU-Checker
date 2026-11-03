@@ -1,7 +1,7 @@
 from pathlib import Path
-from PySide6.QtCore import Qt,QRectF,QPointF,QVariantAnimation
+from PySide6.QtCore import Qt,QRectF,QPointF,QVariantAnimation,QSize
 from PySide6.QtGui import QColor, QPainter, QPainterPath, QPen, QLinearGradient, QRadialGradient,QFont
-from PySide6.QtWidgets import QWidget, QFrame, QLabel, QVBoxLayout, QHBoxLayout, QProgressBar,QPushButton
+from PySide6.QtWidgets import QWidget, QFrame, QLabel, QVBoxLayout, QHBoxLayout, QProgressBar,QPushButton,QSizePolicy
 
 STYLE = """
 QWidget {font-family:'Inter','Noto Sans SC';font-size:13px;color:#d8e5f1;background:transparent;}
@@ -58,13 +58,33 @@ class ModernButton(QPushButton):
         super().__init__(text)
         self.primary,self.ghost=primary,ghost
         self.phase=0.
+        self.keyboard_focus=False
         self.animation=QVariantAnimation(self)
         self.animation.setDuration(140)
         self.animation.valueChanged.connect(self.animate)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.setMinimumHeight(38)
-        self.setMinimumWidth(85)
+        self.setFixedHeight(42)
+        self.setMinimumWidth(self.sizeHint().width())
+        self.setSizePolicy(QSizePolicy.Policy.Minimum,QSizePolicy.Policy.Fixed)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+
+    def sizeHint(self):
+        font=self.font()
+        font.setWeight(QFont.Weight.Medium)
+        from PySide6.QtGui import QFontMetrics
+        return QSize(QFontMetrics(font).horizontalAdvance(self.text().lstrip('+ '))+16+10+44,42)
+
+    def minimumSizeHint(self):
+        return self.sizeHint()
+
+    def setText(self,text):
+        super().setText(text)
+        self.setMinimumWidth(self.sizeHint().width())
+        self.updateGeometry()
+
+    def focusInEvent(self,event):
+        self.keyboard_focus=event.reason() in (Qt.FocusReason.TabFocusReason,Qt.FocusReason.BacktabFocusReason,Qt.FocusReason.ShortcutFocusReason)
+        super().focusInEvent(event)
 
     def animate(self,value):
         self.phase=float(value)
@@ -134,7 +154,7 @@ class ModernButton(QPushButton):
         p.restore()
         p.setPen(fg)
         p.drawText(QRectF(start+25,0,width+3,self.height()),Qt.AlignmentFlag.AlignVCenter,text)
-        if self.hasFocus():
+        if self.hasFocus() and self.keyboard_focus:
             p.setBrush(Qt.BrushStyle.NoBrush)
             p.setPen(QPen(QColor('#b1f6e5'),1))
             p.drawRoundedRect(QRectF(4,4,self.width()-8,self.height()-8),6,6)
