@@ -5,6 +5,8 @@ from PySide6.QtGui import QColor,QPalette
 from PySide6.QtWidgets import QApplication,QWidget
 
 DAY={
+    '#e8ca67':'#987516','#ed8948':'#b65b25',
+    '#b6a0ef':'#7755b5',
     '#17263a':'#e2edf3','#2c425a':'#c9dfe9','#56677c':'#899ba7','#41576c':'#94aebe',
     '#080f1e':'#e7eff4','#0e1b2d':'#f7fbfd','#0c1729':'#f7fbfd','#101b2d':'#edf4f8',
     '#0b1728':'#f7fbfd','#0b192a':'#f7fbfd','#0c192b':'#f7fbfd','#0b1424':'#e1ecf2',

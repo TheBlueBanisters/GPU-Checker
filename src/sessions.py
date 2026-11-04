@@ -223,7 +223,8 @@ class HostSession(QObject):
             state['label']='已暂停' if state['visual']=='paused' else '连接中断'
             if state['visual']=='paused':
                 previous=self.last_gpu_states.get(uuid)
-                state['label']=previous['label'] if previous else '未知'
+                state['label']=previous['label'] if previous else '不可用'
+                if state['label']=='未知':state['label']='不可用'
                 if previous: state['color']=previous['color']
                 state['historical']=True
                 state['reason']='暂停前的最后采样状态（非实时，不计入当前可用数量）'
@@ -235,4 +236,5 @@ class HostSession(QObject):
             return None
         states=[self.gpu_availability(g['uuid']) for g in self.snapshot['gpus']]
         return {'idle':sum(s['idle'] for s in states),'available':sum(s['available'] for s in states),
+                'light':sum(s['status']=='light' for s in states),
                 'total':len(states),'unknown':sum(s['status'] in ('unknown','observing') for s in states)}

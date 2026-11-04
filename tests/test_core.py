@@ -33,6 +33,29 @@ def test_permission_is_reported_not_escalated():
         assert probe.process_details(123)["user"] == "无权限"
 
 
+def test_probe_uses_native_noncontiguous_indices_by_uuid(monkeypatch):
+    xml=b'''<nvidia_smi_log><gpu><uuid>GPU-B</uuid><minor_number>0</minor_number>
+    <processes><process_info><pid>123</pid><type>C</type><process_name>python</process_name></process_info></processes>
+    </gpu><gpu><uuid>GPU-A</uuid><minor_number>1</minor_number></gpu></nvidia_smi_log>'''
+    calls=[]
+    def run(args,**kwargs):
+        calls.append(args)
+        return types.SimpleNamespace(returncode=0,stderr=b'',stdout=xml if '-x' in args else b'7, GPU-A\n3, GPU-B\n')
+    monkeypatch.setattr(probe.shutil,'which',lambda name:'/usr/bin/nvidia-smi')
+    monkeypatch.setattr(probe.subprocess,'run',run)
+    monkeypatch.setattr(probe,'process_details',lambda pid:{'user':'demo','cwd':'/demo'})
+    data=probe.sample()
+    assert [g['index'] for g in data['gpus']]==[3,7]
+    assert data['processes'][0]['gpu']==3
+    assert calls[1][1:]==['--query-gpu=index,uuid','--format=csv,noheader,nounits']
+
+
+def test_unreadable_native_index_never_falls_back_to_order_or_device_minor():
+    xml='<nvidia_smi_log><gpu><uuid>GPU-A</uuid><minor_number>8</minor_number></gpu></nvidia_smi_log>'
+    assert probe.parse_xml(xml,indices={})['gpus'][0]['index'] is None
+    assert probe.parse_xml(xml)['gpus'][0]['index'] is None
+
+
 def test_pid_reuse_is_detected():
     from unittest.mock import mock_open
     a = "123 (name) " + " ".join(["S", "1"] + ["0"] * 17 + ["100"])

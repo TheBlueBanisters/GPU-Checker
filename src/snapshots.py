@@ -36,7 +36,7 @@ def clean_data(data):
     if any(not required.issubset(g) or not isinstance(g['uuid'],str) for g in gpus):
         raise ValueError('Incomplete GPU snapshot')
     for g in gpus:
-        if not isinstance(g['index'],int) or isinstance(g['index'],bool) or g['index']<0: raise ValueError('Invalid GPU index')
+        if g['index'] is not None and (not isinstance(g['index'],int) or isinstance(g['index'],bool) or g['index']<0): raise ValueError('Invalid GPU index')
         if any(not isinstance(g[k],str) for k in ('uuid','name','fan','state')): raise ValueError('Invalid GPU text')
         for key in ('util','used','total','temp','power'):
             value=g[key]
@@ -45,7 +45,7 @@ def clean_data(data):
     if any(not {'gpu','uuid','pid','kind','memory','name'}.issubset(p) for p in processes):
         raise ValueError('Incomplete process snapshot')
     for p in processes:
-        if not isinstance(p['gpu'],int) or isinstance(p['gpu'],bool): raise ValueError('Invalid process GPU')
+        if p['gpu'] is not None and (not isinstance(p['gpu'],int) or isinstance(p['gpu'],bool)): raise ValueError('Invalid process GPU')
         if any(not isinstance(p[k],str) for k in ('uuid','pid','kind','name')): raise ValueError('Invalid process text')
         value=p['memory']
         if value is not None and (isinstance(value,bool) or not isinstance(value,(float,int)) or not math.isfinite(value)):

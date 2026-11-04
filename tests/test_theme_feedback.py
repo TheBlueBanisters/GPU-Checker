@@ -7,6 +7,30 @@ import app as ui
 import themes
 from visuals import STYLE
 from dialogs import HostDialog
+from shiboken6 import isValid
+
+
+def test_theme_crossfade_can_reverse_without_moving_layout_and_cleans_on_resize(window):
+    w=window;application=QApplication.instance();themes.apply(application,'night',STYLE)
+    w.show();w.resize(1280,900);w.connect_all();w.selected.worker.data.emit(snapshot(1))
+    QApplication.processEvents();QTest.qWait(1000)
+    worker=w.selected.worker
+    widgets=(w.table,w.details,w.card_scroll,w.status_text,*[value.parentWidget() for value in w.stats])
+    def geometry():return [(widget.mapTo(w,QPoint()).toTuple(),widget.size().toTuple()) for widget in widgets]
+    baseline=geometry()
+    w.toggle_theme();QApplication.processEvents();QTest.qWait(150)
+    first=w.theme_transition.overlay
+    assert first and 0<first.progress<1 and themes.is_day()
+    assert first.testAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+    assert geometry()==baseline and w.selected.worker is worker and worker.stops==0
+    w.toggle_theme();QApplication.processEvents();QTest.qWait(100)
+    assert not themes.is_day() and w.theme_transition.overlay is not first
+    assert not isValid(first) or not first.isVisible()
+    assert geometry()==baseline
+    QTest.qWait(650);assert w.theme_transition.overlay is None
+    w.toggle_theme();w.resize(1360,900);QApplication.processEvents()
+    assert w.theme_transition.overlay is None
+    w.toggle_theme();w.close();assert w.theme_transition.overlay is None
 
 
 def test_host_hover_dwell_preserves_selection_and_workers(window):
@@ -16,6 +40,9 @@ def test_host_hover_dwell_preserves_selection_and_workers(window):
     listing=w.host_list
     QTest.mouseRelease(listing.viewport(),Qt.MouseButton.LeftButton,pos=QPoint(1,1))
     listing.setCurrentRow(0)
+    w.side_scroll.ensureWidgetVisible(listing)
+    listing.scrollToItem(listing.item(1))
+    QApplication.processEvents()
     point=listing.visualItemRect(listing.item(1)).center()
     QTest.mouseMove(listing.viewport(),point)
     QTest.qWait(1650)
@@ -53,7 +80,7 @@ def test_theme_updates_existing_and_new_widgets_and_persists(window):
         assert themes.is_day()
         assert [s.worker for s in w.sessions.values()]==workers
         gpu=next(iter(w.cards.values()))
-        assert '17px' in gpu.name.styleSheet() and gpu.name.text()=='test'
+        assert '21px' in gpu.name.styleSheet() and gpu.name.text()=='test'
         w.toggle_theme()
         assert not themes.is_day() and '#0d1d30' in w.title_bar.styleSheet()
     finally:

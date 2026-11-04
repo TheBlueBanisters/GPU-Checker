@@ -1,5 +1,6 @@
 """Read-only Linux probe, sent in memory through SSH. Python 3.6+; no installation."""
 import json
+import csv
 import os
 import pwd
 import shutil
@@ -53,10 +54,24 @@ def process_details(pid):
         return {"user": "已退出", "cwd": "进程已退出或 PID 不在当前命名空间", "exe": "—"}
 
 
-def parse_xml(xml, details=process_details):
+def parse_gpu_indices(output):
+    indices={}
+    for row in csv.reader(output.decode('utf-8','replace').splitlines()):
+        if len(row)!=2: continue
+        index,uuid=(value.strip() for value in row)
+        if index.isdigit() and uuid and uuid!='N/A':
+            value=int(index)
+            indices[uuid]=value if uuid not in indices or indices[uuid]==value else None
+    return indices
+
+
+def parse_xml(xml, details=process_details, indices=None):
     root = ET.fromstring(xml)
     gpus, processes, cache = [], [], {}
-    for index, gpu in enumerate(root.findall("gpu")):
+    for gpu in root.findall("gpu"):
+        uuid=text(gpu,'uuid')
+        native=text(gpu,'index')
+        index=indices.get(uuid) if indices is not None else int(native) if native.isdigit() else None
         g = {"index": index, "uuid": text(gpu, "uuid"), "name": text(gpu, "product_name"),
              "util": number(text(gpu, "utilization/gpu_util")),
              "used": number(text(gpu, "fb_memory_usage/used")),
@@ -123,7 +138,15 @@ def sample():
                     'gpu_status':'no_gpu','notice':'SSH 已连接；nvidia-smi 未发现 NVIDIA GPU'}
         return {'gpus':[],'processes':[],'driver':'N/A','cuda':'N/A','timestamp':time.time(),
                 'gpu_status':'unavailable','notice':'SSH 已连接，GPU 查询不可用：'+message}
-    data=parse_xml(run.stdout)
+    try:
+        index_run=subprocess.run([smi,'--query-gpu=index,uuid','--format=csv,noheader,nounits'],
+                                 stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=8,env=env)
+        indices=parse_gpu_indices(index_run.stdout) if index_run.returncode==0 else {}
+    except (OSError,subprocess.TimeoutExpired):
+        indices={}
+    data=parse_xml(run.stdout,indices=indices)
+    if any(g['index'] is None for g in data['gpus']):
+        data['notice']='部分 GPU 原生编号暂不可读，显示 —；不会按返回顺序重新编号'
     for g in data['gpus']:
         minor=g.get('minor_number','')
         paths=['/dev/nvidia'+minor,'/dev/nvidiactl'] if minor.isdigit() else []

@@ -4,6 +4,8 @@ import storage
 from version import APP_VERSION
 from host_list import HostList
 from telemetry_transition import TelemetryTransition
+from status_message import StatusMessage
+from theme_transition import ThemeTransition
 import json
 from pathlib import Path
 import sys
@@ -11,9 +13,9 @@ import tempfile
 import time
 import uuid
 from PySide6.QtCore import Qt, QTimer, QSize,QEvent,QObject
-from PySide6.QtGui import QColor, QIcon, QPalette,QFontDatabase,QFont
+from PySide6.QtGui import QColor, QIcon, QPalette,QFontDatabase,QFont,QFontMetrics
 from PySide6.QtWidgets import (QApplication,QMainWindow,QWidget,QFrame,QLabel,QHBoxLayout,QVBoxLayout,
-    QPushButton,QLineEdit,QListWidget,QListWidgetItem,QScrollArea,QTableWidget,QTableWidgetItem,
+    QPushButton,QLineEdit,QListWidget,QListWidgetItem,QScrollArea,QTableWidget,QTableWidgetItem,QGridLayout,QLayout,QBoxLayout,
     QHeaderView,QTextEdit,QSplitter,QFileDialog,QMessageBox,QDialog,QSizePolicy,QToolTip)
 from backend import DATA, config_path
 from sessions import HostSession
@@ -42,7 +44,7 @@ class Window(QMainWindow):
     def toggle_theme(self):
         if hasattr(self,'telemetry_transition'): self.telemetry_transition.cancel()
         mode='night' if themes.is_day() else 'day'
-        themes.apply(QApplication.instance(),mode,STYLE)
+        self.theme_transition.switch(QApplication.instance(),mode,STYLE)
         DATA.mkdir(parents=True,exist_ok=True)
         path=DATA/'ui_preferences.json'
         temporary=path.with_suffix('.tmp')
@@ -55,8 +57,12 @@ class Window(QMainWindow):
         self.setWindowIcon(QIcon(str(ASSETS/'app.ico')))
         self.setWindowFlags(Qt.WindowType.Window|Qt.WindowType.FramelessWindowHint|Qt.WindowType.WindowMinMaxButtonsHint|Qt.WindowType.WindowCloseButtonHint|Qt.WindowType.WindowSystemMenuHint)
         self.resize_handles=[]
-        self.resize(1480,1000)
-        self.setMinimumSize(1080,760)
+        self._screen_hooked=False
+        self.setMinimumSize(800,500)
+        screen=QApplication.primaryScreen()
+        area=screen.availableGeometry() if screen else None
+        self.resize(min(1480,max(800,area.width()-40)) if area else 1480,
+                    min(1000,max(500,area.height()-40)) if area else 1000)
         self.session_factory=session_factory
         try:
             self.availability_rules=Rules(**json.loads((DATA/'availability_rules.json').read_text(encoding='utf-8')))
@@ -107,22 +113,24 @@ class Window(QMainWindow):
         root.setSpacing(0)
         side=QFrame()
         side.setObjectName('sidebar')
-        side.setFixedWidth(282)
+        self.side_scroll=QScrollArea()
+        self.side_scroll.setWidgetResizable(True)
+        self.side_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.side_scroll.setFixedWidth(282)
         sb=QVBoxLayout(side)
+        self.sidebar_layout=sb
         sb.setContentsMargins(18,25,18,19)
         sb.setSpacing(13)
         brand=QHBoxLayout()
         icon=QLabel()
         icon.setPixmap(QIcon(str(ASSETS/'app.ico')).pixmap(QSize(36,36)))
-        brand.addWidget(label('HOST DIRECTORY','brand'))
-        brand.addStretch()
+        brand.addWidget(label('HOST DIRECTORY','brand'),1)
         sb.addLayout(brand)
         sb.addWidget(label('MULTI-HOST / SECURE SHELL','eyebrow'))
         sb.addSpacing(18)
         row=QHBoxLayout()
-        row.addWidget(label('主机舰队','section'))
+        row.addWidget(label('主机舰队','section'),1)
         self.host_count=label('00','eyebrow')
-        row.addStretch()
         row.addWidget(self.host_count)
         sb.addLayout(row)
         self.host_search=QLineEdit()
@@ -130,6 +138,7 @@ class Window(QMainWindow):
         self.host_search.textChanged.connect(self.filter_hosts)
         sb.addWidget(self.host_search)
         self.host_list=HostList()
+        self.host_list.setMinimumHeight(180)
         self.host_list.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOn)
         self.host_list.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.host_list.currentRowChanged.connect(self.select_row)
@@ -148,8 +157,22 @@ class Window(QMainWindow):
         row.addWidget(self.button('使用说明',self.help))
         sb.addLayout(row)
         sb.addWidget(label('READ ONLY  ·  无远端常驻服务','eyebrow'))
-        root.addWidget(side)
-        content=QVBoxLayout()
+        for control in side.findChildren(ModernButton):
+            control.setMinimumWidth(0)
+            control.setSizePolicy(QSizePolicy.Policy.Ignored,QSizePolicy.Policy.Fixed)
+        for text in side.findChildren(QLabel):
+            text.setMinimumWidth(0)
+            text.setSizePolicy(QSizePolicy.Policy.Ignored,QSizePolicy.Policy.Preferred)
+        self.host_count.setFixedWidth(28)
+        self.side_scroll.setWidget(side)
+        root.addWidget(self.side_scroll)
+        self.dashboard_scroll=QScrollArea()
+        self.dashboard_scroll.setWidgetResizable(True)
+        self.dashboard_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.dashboard=QWidget()
+        content=QVBoxLayout(self.dashboard)
+        self.content_layout=content
+        content.setSizeConstraint(QLayout.SizeConstraint.SetMinimumSize)
         content.setContentsMargins(27,22,27,19)
         content.setSpacing(11)
         self.fleet=self.title_bar.fleet_label
@@ -157,12 +180,19 @@ class Window(QMainWindow):
         hero=MechPanel()
         hero.setObjectName('glass')
         hb=QVBoxLayout(hero)
-        hb.setContentsMargins(22,15,22,15)
+        hb.setContentsMargins(22,18,22,24)
         header=QHBoxLayout()
+        self.hero_header=header
         titles=QVBoxLayout()
         self.heading=label('选择一台主机','heading')
+        self.heading.setMinimumWidth(0)
+        self.heading.setFixedHeight(36)
+        self.heading.setSizePolicy(QSizePolicy.Policy.Ignored,QSizePolicy.Policy.Preferred)
         self.subtitle=label('所有已连接主机在后台独立采集，点击列表切换查看。','muted')
         self.subtitle.setWordWrap(True)
+        self.subtitle.setFixedHeight(36)
+        self.subtitle.setMinimumWidth(0)
+        self.subtitle.setSizePolicy(QSizePolicy.Policy.Ignored,QSizePolicy.Policy.Preferred)
         titles.addWidget(self.heading)
         titles.addWidget(self.subtitle)
         header.addLayout(titles,1)
@@ -173,7 +203,7 @@ class Window(QMainWindow):
         self.telemetry=label('SECURE SHELL  /  LIVE TELEMETRY','eyebrow')
         self.telemetry.setMinimumWidth(0)
         self.telemetry.setSizePolicy(QSizePolicy.Policy.Ignored,QSizePolicy.Policy.Preferred)
-        actions.addWidget(self.telemetry)
+        hb.addWidget(self.telemetry)
         actions.addStretch()
         self.connect_button=self.button('连接主机',self.toggle_selected,True)
         self.edit_button=self.button('编辑',self.edit_host)
@@ -183,48 +213,55 @@ class Window(QMainWindow):
             button.setProperty('fixedAction',True)
             button.setFixedSize(140,42)
             actions.addWidget(button)
-        actions.setSpacing(12)
+        actions.setSpacing(18)
         hb.addLayout(actions)
         content.addWidget(hero)
-        metrics=QHBoxLayout()
+        metrics=QGridLayout()
+        self.metrics_layout=metrics
         self.stats=[]
         for title in ('显卡数量','平均 GPU 利用率','显存占用 / 总量','用卡进程'):
             frame=MechPanel()
+            frame.setFixedHeight(82)
             frame.setObjectName('glass')
             box=QVBoxLayout(frame)
             box.setContentsMargins(17,12,17,12)
             box.addWidget(label(title,'muted'))
             value=label('—','stat')
+            value.setMinimumWidth(0)
+            value.setSizePolicy(QSizePolicy.Policy.Ignored,QSizePolicy.Policy.Preferred)
             box.addWidget(value)
             self.stats.append(value)
             frame.enable_feedback()
-            metrics.addWidget(frame,1)
+            metrics.addWidget(frame,0,len(self.stats)-1)
         content.addLayout(metrics)
         row=QHBoxLayout()
+        self.gpu_header=row
         row.addWidget(label('GPU 遥测','section'))
         row.addStretch()
         self.availability_legend=QWidget()
         legend=QHBoxLayout(self.availability_legend)
         legend.setContentsMargins(0,0,0,0)
         legend.setSpacing(12)
-        for state in ('idle','available','busy','blocked','unknown'):
+        for state in ('idle','available','light','busy','blocked'):
             entry=label('◆ '+LABELS[state])
             set_style(entry,f'font-size:13px;color:{COLORS[state]}')
             legend.addWidget(entry)
-        self.availability_legend.setToolTip('绿：空闲；蓝：可用；琥珀：占用；灰：不可用／断连／未知，按文字区分。可用包含空闲。')
+        self.availability_legend.setToolTip('绿：空闲；蓝：可用；黄：轻量占用；橙：占用；灰：不可用（含数据不足与断连）。可用数量包含空闲和连续确认后的轻量占用。')
         row.addWidget(self.availability_legend)
         row.addWidget(self.button('判定规则',self.edit_availability_rules))
         content.addLayout(row)
         self.card_scroll=QScrollArea()
         self.card_scroll.setWidgetResizable(True)
-        self.card_scroll.setFixedHeight(242)
+        self.card_scroll.setViewportMargins(0,0,12,14)
+        self.card_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.card_scroll.setFixedHeight(308)
         self.card_widget=QWidget()
-        self.card_layout=QHBoxLayout(self.card_widget)
-        self.card_layout.setContentsMargins(0,0,0,5)
+        self.card_layout=QGridLayout(self.card_widget)
+        self.card_layout.setAlignment(Qt.AlignmentFlag.AlignLeft|Qt.AlignmentFlag.AlignTop)
+        self.card_layout.setContentsMargins(0,0,8,18)
         self.card_layout.setSpacing(12)
         self.empty=label('等待加密遥测链路建立…','muted')
-        self.card_layout.addWidget(self.empty)
-        self.card_layout.addStretch()
+        self.card_layout.addWidget(self.empty,0,0)
         self.card_scroll.setWidget(self.card_widget)
         content.addWidget(self.card_scroll)
         row=QHBoxLayout()
@@ -266,18 +303,21 @@ class Window(QMainWindow):
         self.details.setMinimumHeight(93)
         self.details.setPlainText('选择进程，查看完整工作目录与身份信息。只读查询遵循服务器权限。')
         splitter=QSplitter(Qt.Orientation.Vertical)
+        splitter.setMinimumHeight(300)
         splitter.addWidget(self.table)
         splitter.addWidget(self.details)
         splitter.setSizes([230,105])
         content.addWidget(splitter,1)
-        self.status_text=label(self.load_error or '就绪 · 主机切换仅改变当前视图，不影响其他监控会话。','muted')
-        self.status_text.setWordWrap(True)
+        self.status_text=StatusMessage(self.load_error or '就绪 · 主机切换仅改变当前视图，不影响其他监控会话。')
         self.status_text.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         content.addWidget(self.status_text)
-        root.addLayout(content,1)
-        regions=[(value.parentWidget(),500) for value in self.stats]
-        regions.extend([(self.card_scroll.viewport(),900),(self.table.viewport(),350),(self.details.viewport(),350)])
+        self.dashboard_scroll.setWidget(self.dashboard)
+        root.addWidget(self.dashboard_scroll,1)
+        regions=[(self.card_scroll.viewport(),650)]
         self.telemetry_transition=TelemetryTransition(self,regions)
+        self.theme_transition=ThemeTransition(self)
+        self.table.viewport().installEventFilter(self.telemetry_transition)
+        self.details.viewport().installEventFilter(self.telemetry_transition)
         self.search.textChanged.connect(self.telemetry_transition.cancel)
         for profile in self.items:
             self.register(profile)
@@ -327,7 +367,7 @@ class Window(QMainWindow):
         for index,p in enumerate(self.items):
             item=QListWidgetItem()
             item.setData(Qt.ItemDataRole.UserRole,p['id'])
-            item.setSizeHint(QSize(230,134))
+            item.setSizeHint(QSize(230,156))
             self.host_list.addItem(item)
             tile=HostTile(self.sessions[p['id']],index)
             self.host_list.setItemWidget(item,tile)
@@ -423,10 +463,12 @@ class Window(QMainWindow):
         for value in self.stats:
             if value.property('telemetryMode')!=mode:
                 value.setProperty('telemetryMode',mode)
-                set_style(value,'color:'+{'empty':'#5d7890','frozen':'#859faf','live':'#8fc8de'}[mode])
+        self.fit_stat_values()
         for widget in (self.connect_button,self.edit_button,self.remove_button):
             widget.setEnabled(session is not None)
         if not session:
+            self.connect_button.set_resume_emphasis(False)
+            self.connect_button.set_monitor_action(None)
             self.badge.setText('● 无主机')
             self.heading.setText('添加你的第一台主机')
             return
@@ -434,6 +476,8 @@ class Window(QMainWindow):
         self.heading.setText(p['name'])
         self.heading.setToolTip(p['name'])
         self.connect_button.setText('暂停监控' if session.desired else '恢复监控')
+        self.connect_button.set_resume_emphasis(not session.desired)
+        self.connect_button.set_monitor_action('pause' if session.desired else 'resume')
         self.badge.setText('● '+session.state+(' · 历史快照' if session.historical else ''))
         color='#68f6cf' if session.fresh else '#ffcb84' if session.desired or session.state in ('连接异常','待认证') else '#91a4be'
         self.badge.setTone(color)
@@ -476,7 +520,8 @@ class Window(QMainWindow):
                 if g['uuid'] not in self.cards:
                     card=GPUCard(g,history,session.gpu_availability(g['uuid']))
                     self.cards[g['uuid']]=card
-                    self.card_layout.insertWidget(self.card_layout.count()-1,card)
+                    self.card_layout.addWidget(card,0,len(self.cards)-1)
+                    card.show()
                 else:
                     self.cards[g['uuid']].update_data(g,history,session.gpu_availability(g['uuid']))
             utils=[g['util'] for g in gs if g['util'] is not None]
@@ -487,6 +532,7 @@ class Window(QMainWindow):
             for value,text in zip(self.stats,values):
                 value.setText(text)
         self.size_cards()
+        self.fit_stat_values()
         self.render_processes()
 
     def render_processes(self):
@@ -502,7 +548,7 @@ class Window(QMainWindow):
             identity=(p['uuid'],p['pid'],p.get('start'))
             if identity==selected:
                 selected_row=row
-            values=[p['gpu'],p['pid'],p.get('user','—'),p['kind'],fmt(p['memory']),p['name'].rsplit('/',1)[-1],p.get('cwd','—'),p.get('ppid','—')]
+            values=[p['gpu'] if p['gpu'] is not None else '—',p['pid'],p.get('user','—'),p['kind'],fmt(p['memory']),p['name'].rsplit('/',1)[-1],p.get('cwd','—'),p.get('ppid','—')]
             for col,value in enumerate(values):
                 item=QTableWidgetItem(str(value))
                 item.setTextAlignment(ALIGNMENTS[col])
@@ -758,13 +804,15 @@ class Window(QMainWindow):
                     p['id']=uuid.uuid4().hex
                 existing.add(p['name'])
                 ids.add(p['id'])
+                p['autoconnect']=True
                 added.append(p)
             if not self.save_items(self.items+added):
                 return
             for p in added:
-                self.register(p)
+                session=self.register(p)
+                session.start()
             self.rebuild_list(added[0]['id'] if added else None)
-            self.notify('配置已保存',f'新增 {len(added)} 台主机。点击“全部连接”可并行监控。\n已有主机将在下次连接时使用更新的 SSH config；当前连接不中断。\n'+'\n'.join(warnings))
+            self.notify('配置已保存',f'新增 {len(added)} 台主机，已自动开始连接。\n已有主机保留监控／暂停状态；等待密码或指纹确认的主机会显示相应提示。\n'+'\n'.join(warnings))
         except Exception as exc:
             self.notify('导入失败',str(exc))
 
@@ -828,23 +876,85 @@ class Window(QMainWindow):
         self.render_status()
 
     def size_cards(self):
+        # Reserve the GPU lane independently of card count and monitoring state.
+        height=max(308,min(500,int(self.height()*.32)))
+        if self.card_scroll.height()!=height:self.card_scroll.setFixedHeight(height)
         if self.cards:
-            width=max(180,min(270,(self.card_scroll.viewport().width()-12*(len(self.cards)-1))//len(self.cards)))
-            for card in self.cards.values():
-                card.setFixedWidth(width)
+            margins=self.card_layout.contentsMargins()
+            available=max(240,self.card_scroll.viewport().width()-margins.left()-margins.right())
+            columns=max(1,min(len(self.cards),(available+12)//252))
+            width=min(270,(available-12*(columns-1))//columns)
+            key=(columns,width,tuple((uuid,id(card)) for uuid,card in self.cards.items()))
+            if getattr(self,'_card_grid_key',None)!=key:
+                for card in self.cards.values():self.card_layout.removeWidget(card)
+                for index,card in enumerate(self.cards.values()):
+                    card.setFixedSize(width,270)
+                    self.card_layout.addWidget(card,index//columns,index%columns,Qt.AlignmentFlag.AlignLeft|Qt.AlignmentFlag.AlignTop)
+                self._card_grid_key=key
+                self.card_layout.invalidate();self.card_layout.activate()
+
+    def adapt_layout(self):
+        if not hasattr(self,'metrics_layout'): return
+        self.side_scroll.setFixedWidth(248 if self.width()<1150 else 282)
+        short=self.height()<850
+        self.sidebar_layout.setSpacing(8 if short else 13)
+        self.sidebar_layout.setContentsMargins(12 if short else 18,14 if short else 25,12 if short else 18,14 if short else 19)
+        width=self.dashboard_scroll.viewport().width()
+        compact=width<850
+        self.content_layout.setContentsMargins(12 if compact else 27,14,12 if compact else 27,14)
+        columns=2 if compact else 4
+        for index,value in enumerate(self.stats):
+            frame=value.parentWidget()
+            self.metrics_layout.removeWidget(frame)
+            self.metrics_layout.addWidget(frame,index//columns,index%columns)
+        for column in range(4): self.metrics_layout.setColumnStretch(column,1 if column<columns else 0)
+        self.hero_header.setDirection(QBoxLayout.Direction.TopToBottom if width<650 else QBoxLayout.Direction.LeftToRight)
+        self.gpu_header.setDirection(QBoxLayout.Direction.TopToBottom if width<700 else QBoxLayout.Direction.LeftToRight)
+        for button in (self.connect_button,self.edit_button,self.remove_button):
+            button.setFixedWidth(128 if width<650 else 140)
+        self.size_cards()
+        self.fit_stat_values()
+
+    def fit_stat_values(self):
+        for value in self.stats:
+            font=QFont(value.font());font.setPixelSize(24)
+            natural=QFontMetrics(font).horizontalAdvance(value.text())
+            pixels=max(14,min(24,int(24*max(1,value.width()-2)/max(1,natural))))
+            tone={'empty':'#5d7890','frozen':'#859faf','live':'#8fc8de'}.get(value.property('telemetryMode'),'#8fc8de')
+            set_style(value,f'font-size:{pixels}px;color:{tone}')
 
     def resizeEvent(self,event):
         super().resizeEvent(event)
+        if hasattr(self,'telemetry_transition'): self.telemetry_transition.cancel()
         if hasattr(self,'card_scroll'):
-            self.size_cards()
-            QTimer.singleShot(0,self,self.size_cards)
+            self.adapt_layout()
+            QTimer.singleShot(0,self,self.adapt_layout)
         if hasattr(self,'table'):
             QTimer.singleShot(0,self,self.layout_process_columns)
         if getattr(self,'resize_handles',None):
             layout_handles(self)
 
+    def showEvent(self,event):
+        super().showEvent(event)
+        handle=self.windowHandle()
+        if handle and not self._screen_hooked:
+            handle.screenChanged.connect(self.fit_screen)
+            self._screen_hooked=True
+            self.fit_screen(handle.screen())
+        if hasattr(self,'connect_button'): self.connect_button.sync_glow()
+
+    def fit_screen(self,screen):
+        if not screen or self.isMaximized() or self.isMinimized(): return
+        area=screen.availableGeometry()
+        self.resize(min(self.width(),area.width()),min(self.height(),area.height()))
+        self.move(max(area.left(),min(self.x(),area.right()-self.width()+1)),
+                  max(area.top(),min(self.y(),area.bottom()-self.height()+1)))
+        self.adapt_layout()
+
     def changeEvent(self,event):
         super().changeEvent(event)
+        if event.type()==QEvent.Type.WindowStateChange and hasattr(self,'connect_button'):
+            self.connect_button.sync_glow()
         if event.type()==QEvent.Type.WindowStateChange and self.isMinimized() and hasattr(self,'telemetry_transition'):
             self.telemetry_transition.cancel()
         if event.type()==QEvent.Type.WindowStateChange and getattr(self,'resize_handles',None):
@@ -857,6 +967,7 @@ class Window(QMainWindow):
 
     def closeEvent(self,event):
         self.closing=True
+        if hasattr(self,'theme_transition'):self.theme_transition.cancel()
         if hasattr(self,'telemetry_transition'): self.telemetry_transition.cancel()
         all_sessions=list(self.sessions.values())+self.retired
         running=any(s.running for s in all_sessions)

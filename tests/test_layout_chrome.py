@@ -58,6 +58,8 @@ def test_process_hover_highlights_row_without_changing_selection(window):
     w.selected.worker.data.emit(data)
     w.table.selectRow(1)
     QApplication.processEvents()
+    w.dashboard_scroll.ensureWidgetVisible(w.table)
+    QApplication.processEvents()
     rect=w.table.visualItemRect(w.table.item(0,2))
     QTest.mouseMove(w.table.viewport(),rect.center())
     assert w.table.hovered_row==0

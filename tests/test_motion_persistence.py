@@ -66,7 +66,7 @@ def test_engine_motion_speeds_and_visibility(window):
         card.close()
 
 
-def test_disconnect_fractures_and_pause_stays_quiet(window):
+def test_disconnect_fractures_and_pause_only_animates_electrical_artwork(window):
     w=window;w.show();w.connect_all()
     s=w.selected;s.worker.data.emit(snapshot(1));QApplication.processEvents()
     card=next(iter(w.cards.values()))
@@ -76,6 +76,18 @@ def test_disconnect_fractures_and_pause_stays_quiet(window):
     assert card.motion.state=='disconnected'
     assert card.state_label.text()=='连接中断'
     s.pause()
-    assert card.motion.state=='paused' and not card.motion.timer.isActive()
+    assert card.motion.state=='paused' and card.motion.timer.isActive()
     assert card.state_label.text()==previous
     assert s.availability_counts() is None
+    phase=card.motion.phase
+    period=3.8+(card.motion.seed%5)*.31
+    card.motion.transition=time.monotonic()-.08-(card.motion.seed%19)*.11
+    values=(card.metric_label.text(),card.memory.text(),card.thermal.text())
+    frames=[]
+    for _ in range(12):
+        QTest.qWait(100)
+        frames.append(card.grab().toImage())
+    assert any(frame!=frames[0] for frame in frames[1:])
+    assert card.motion.phase==phase
+    assert values==(card.metric_label.text(),card.memory.text(),card.thermal.text())
+    card.hide();assert not card.motion.timer.isActive()

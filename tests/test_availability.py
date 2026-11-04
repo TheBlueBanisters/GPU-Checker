@@ -29,6 +29,83 @@ def test_small_graphics_context_is_available_but_not_idle():
     assert state['status']=='available' and state['available'] and not state['idle']
 
 
+def compute(**updates):
+    return dict(dict(uuid='GPU-test',kind='C',pid='123',name='python',memory=410.),**updates)
+
+
+def test_light_compute_requires_sustained_low_resources_and_is_counted_available():
+    tracker=Tracker()
+    data={'gpus':[gpu(used=410.,free=24166.)],'processes':[compute()]}
+    assert tracker.observe(data,0,5)['GPU-test']['status']=='observing'
+    assert tracker.observe(data,5,5)['GPU-test']['status']=='observing'
+    state=tracker.observe(data,10,5)['GPU-test']
+    assert state['status']=='light' and state['available'] and not state['idle']
+    data['gpus'][0]['util']=90
+    assert tracker.observe(data,11,5)['GPU-test']['status']=='busy'
+    data['gpus'][0]['util']=0
+    assert tracker.observe(data,12,5)['GPU-test']['status']=='busy'
+
+
+@pytest.mark.parametrize('changes,process',[
+    ({'compute_mode':'Exclusive_Process'},compute()),
+    ({'used':4096.,'free':20480.},compute()),
+    ({'util':11.},compute()),
+    ({},compute(name='nvidia-cuda-mps-server')),
+    ({},compute(kind='M')),
+    ({},compute(memory=None)),
+    ({},compute(pid='')),
+])
+def test_active_context_is_not_light_when_sharing_cannot_be_confirmed(changes,process):
+    state=candidate(gpu(**changes),[process],Rules())
+    assert state['status']=='busy' and not state['available']
+
+
+def test_light_memory_limits_apply_to_absolute_and_fractional_usage():
+    rules=Rules(light_used_mib=1024,light_used_fraction=.05)
+    assert candidate(gpu(used=1024.,free=23552.),[compute()],rules)['status']=='light'
+    assert candidate(gpu(used=1025.,free=23551.),[compute()],rules)['status']=='busy'
+    assert candidate(gpu(total=8192.,used=410.,free=7782.),[compute()],rules)['status']=='busy'
+
+
+def test_busy_light_boundary_does_not_bounce_through_observing():
+    tracker=Tracker()
+    data={'gpus':[gpu(util=95,used=410.,free=24166.)],'processes':[compute()]}
+    assert tracker.observe(data,0,2)['GPU-test']['status']=='busy'
+    for now in range(2,24,2):
+        data['gpus'][0]['util']=9 if now%4 else 11
+        state=tracker.observe(data,now,2)['GPU-test']
+        assert state['status']=='busy' and not state['available']
+    data['gpus'][0]['util']=90
+    assert tracker.observe(data,24,2)['GPU-test']['status']=='busy'
+    data['gpus'][0]['util']=0
+    for now in range(26,36,2):
+        assert tracker.observe(data,now,2)['GPU-test']['status']=='busy'
+    state=tracker.observe(data,36,2)['GPU-test']
+    assert state['status']=='light' and state['available']
+    data['gpus'][0]['util']=80
+    assert tracker.observe(data,38,2)['GPU-test']['status']=='busy'
+
+
+def test_eligible_category_changes_keep_confirmation_but_idle_needs_continuous_absence():
+    tracker=Tracker();data={'gpus':[gpu()],'processes':[]}
+    for now in range(0,12,2):
+        data['processes']=[] if now%6==0 else [{'uuid':'GPU-test','kind':'G'}] if now%6==2 else [compute(memory=80)]
+        state=tracker.observe(data,now,2)['GPU-test']
+    assert state['status']=='light' and state['available']
+    data['processes']=[]
+    for now in range(12,22,2):
+        state=tracker.observe(data,now,2)['GPU-test']
+        assert state['status']=='available' and not state['idle']
+    assert tracker.observe(data,22,2)['GPU-test']['idle']
+
+
+def test_reset_starts_a_fresh_observation_instead_of_reusing_busy_history():
+    tracker=Tracker();data={'gpus':[gpu(util=90)],'processes':[]}
+    assert tracker.observe(data,0,2)['GPU-test']['status']=='busy'
+    tracker.reset();data['gpus'][0]['util']=0
+    assert tracker.observe(data,2,2)['GPU-test']['status']=='observing'
+
+
 @pytest.mark.parametrize('changes,status',[
     ({'compute_mode':'Prohibited'},'blocked'),
     ({'compute_mode':'N/A'},'unknown'),
@@ -73,8 +150,8 @@ def test_bad_sample_interrupts_confirmation_and_long_gap_resets():
     assert t.observe(sample,11,5)['GPU-test']['idle']
     occupied={'gpus':[gpu()],'processes':[{'uuid':'GPU-test','kind':'C'}]}
     assert t.observe(occupied,12,5)['GPU-test']['status']=='busy'
-    assert t.observe(sample,14,5)['GPU-test']['status']=='observing'
-    assert t.observe(sample,16,5)['GPU-test']['status']=='observing'
+    assert t.observe(sample,14,5)['GPU-test']['status']=='busy'
+    assert t.observe(sample,16,5)['GPU-test']['status']=='busy'
     assert t.observe(sample,50,5)['GPU-test']['status']=='observing'
 
 

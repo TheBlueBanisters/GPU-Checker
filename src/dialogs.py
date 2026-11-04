@@ -2,7 +2,7 @@ from themes import set_style
 from pathlib import Path
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (QDialog,QVBoxLayout,QHBoxLayout,QFormLayout,QLineEdit,QComboBox,
-    QSpinBox,QCheckBox,QPushButton,QDialogButtonBox,QFileDialog,QMessageBox,QPlainTextEdit,QDoubleSpinBox)
+    QSpinBox,QCheckBox,QPushButton,QDialogButtonBox,QFileDialog,QMessageBox,QPlainTextEdit,QDoubleSpinBox,QScrollArea,QLayout,QApplication)
 from backend import BASE, validate, config_path
 from visuals import label,MechPanel
 from window_chrome import TitleBar,install_handles,layout_handles
@@ -19,6 +19,13 @@ class MechDialog(QDialog):
 
     def showEvent(self,event):
         super().showEvent(event)
+        screen=self.screen() or QApplication.primaryScreen()
+        if screen:
+            available=screen.availableGeometry().adjusted(16,16,-16,-16)
+            self.resize(min(self.width(),available.width()),min(self.height(),available.height()))
+            frame=self.frameGeometry()
+            self.move(max(available.left(),min(frame.x(),available.right()-frame.width()+1)),
+                      max(available.top(),min(frame.y(),available.bottom()-frame.height()+1)))
         if not self.resize_handles:
             self.resize_handles=install_handles(self)
         layout_handles(self)
@@ -36,8 +43,14 @@ def dialog_layout(dialog):
     root.addWidget(TitleBar(dialog,dialog.windowTitle(),compact=True))
     body=MechPanel()
     body.setObjectName('glass')
-    root.addWidget(body,1)
-    return QVBoxLayout(body)
+    scroll=QScrollArea()
+    scroll.setWidgetResizable(True)
+    scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+    scroll.setWidget(body)
+    root.addWidget(scroll,1)
+    box=QVBoxLayout(body)
+    box.setSizeConstraint(QLayout.SizeConstraint.SetMinimumSize)
+    return box
 
 
 class HostDialog(MechDialog):
@@ -247,10 +260,19 @@ class AvailabilityDialog(MechDialog):
         self.util.setRange(0,90);self.util.setSuffix(' %');self.util.setValue(round(rules.max_util))
         self.duration=QSpinBox()
         self.duration.setRange(3,120);self.duration.setSuffix(' 秒');self.duration.setValue(round(rules.stable_seconds))
+        self.original_rules=rules
+        self.light_util=QSpinBox()
+        self.light_util.setRange(0,90);self.light_util.setSuffix(' %');self.light_util.setValue(round(rules.light_max_util))
+        self.light_used=QDoubleSpinBox()
+        self.light_used.setRange(.5,64);self.light_used.setSingleStep(.5);self.light_used.setSuffix(' GiB');self.light_used.setValue(rules.light_used_mib/1024)
+        self.light_fraction=QSpinBox()
+        self.light_fraction.setRange(1,50);self.light_fraction.setSuffix(' %');self.light_fraction.setValue(round(rules.light_used_fraction*100))
         for title,widget in (('最低剩余显存',self.free),('最低剩余显存比例',self.fraction),('最高 GPU 利用率',self.util),('最短观察跨度',self.duration)):
             form.addRow(title,widget)
+        for title,widget in (('轻量占用最高利用率',self.light_util),('轻量占用最多显存',self.light_used),('轻量占用最高显存比例',self.light_fraction)):
+            form.addRow(title,widget)
         box.addLayout(form)
-        explanation=label('可用含空闲，两项显存门槛同时满足。至少 3 次连续采样并覆盖观察跨度后，才能确认可用。\n\n空闲：没有任何 GPU 进程、利用率 ≤5%、显存仅少量后台开销。可用：也允许少量图形后台进程，但计算／MPS 进程一律视为占用。\n\n数据缺失、设备权限不明、MIG 无法确认、暂停／过期时不标可用。驱动禁止计算、恢复请求或明显硬件异常会排除。\n\n这是只读资源观测，不预留显存、不测试运行 CUDA，也不代替集群调度器或保证任务分配成功。','muted')
+        explanation=label('可用数量包含空闲和轻量占用，两项剩余显存门槛同时满足。至少 3 次连续采样并覆盖观察跨度后确认。\n\n轻量占用：已有可识别计算进程，利用率与显存占用都低于轻量门槛，且 Compute Mode 为 Default。占用显存绝对值和比例两项上限同时满足。MPS、未知进程、独占模式下的已有上下文不视为可共卡。\n\n数据缺失、设备权限不明、MIG、暂停或过期时不标可用。仅为当前资源提示，不预留显存，不保证现有任务之后不会增长，也不代替集群调度器。','muted')
         explanation.setWordWrap(True)
         box.addWidget(explanation)
         buttons=QDialogButtonBox(QDialogButtonBox.StandardButton.Save|QDialogButtonBox.StandardButton.Cancel)
@@ -261,4 +283,6 @@ class AvailabilityDialog(MechDialog):
 
     def rules(self):
         return Rules(free_mib=self.free.value()*1024,free_fraction=self.fraction.value()/100,
-                     max_util=self.util.value(),stable_seconds=self.duration.value())
+                     max_util=self.util.value(),stable_seconds=self.duration.value(),min_samples=self.original_rules.min_samples,
+                     light_max_util=self.light_util.value(),light_used_mib=self.light_used.value()*1024,
+                     light_used_fraction=self.light_fraction.value()/100)

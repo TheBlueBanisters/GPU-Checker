@@ -5,7 +5,7 @@ from card_motion import CardMotion
 from pathlib import Path
 from PySide6.QtCore import Qt,QRectF,QPointF,QVariantAnimation,QSize,QEvent,QEasingCurve
 from PySide6.QtGui import QColor, QPainter, QPainterPath, QPen, QLinearGradient, QRadialGradient,QFont
-from PySide6.QtWidgets import QWidget, QFrame, QLabel, QVBoxLayout, QHBoxLayout, QProgressBar,QPushButton,QSizePolicy
+from PySide6.QtWidgets import QWidget, QFrame, QLabel, QVBoxLayout, QHBoxLayout, QProgressBar,QPushButton,QSizePolicy,QGraphicsDropShadowEffect
 from availability import result as availability_result
 
 STYLE = """
@@ -124,6 +124,9 @@ class MechPanel(QFrame):
         self.click_animation.start()
         self.update()
 
+    def ripple_color(self):
+        return themed(self.property('feedbackColor') or self.property('availabilityColor') or '#75e6e1')
+
     def clear_ripples(self):
         self.click_animation.stop()
         self.ripples.clear()
@@ -202,7 +205,7 @@ class MechPanel(QFrame):
         if state_color:
             edge.setAlpha(165)
         p.setPen(QPen(edge,1))
-        p.drawPath(notch_path(rect,10))
+        p.drawPath(self.panel_path(rect))
         self.paint_background(p,rect)
         accent=themed(state_color or ('#64e5d8' if selected else '#3e98ac' if role=='card' else '#315e76'))
         p.setPen(QPen(accent,2))
@@ -211,15 +214,17 @@ class MechPanel(QFrame):
         if selected:
             p.drawLine(QPointF(1,13),QPointF(1,self.height()-16))
         if self.feedback_enabled and (self.hover_amount>0 or self.ripples):
-            outline=notch_path(rect,10)
+            outline=self.panel_path(rect)
             p.setClipPath(outline)
             if self.hover_amount>0:
                 glow=QRadialGradient(self.feedback_point,max(self.width(),self.height())*.85)
-                glow.setColorAt(0,themed(60,205,210,int(43*self.hover_amount)))
-                glow.setColorAt(1,themed(30,130,180,0))
+                hover_color=QColor(themed(state_color)) if role=='card' and state_color else themed('#63dec1')
+                ink=QColor(hover_color);ink.setAlpha(int(43*self.hover_amount));glow.setColorAt(0,ink)
+                ink.setAlpha(0);glow.setColorAt(1,ink)
                 p.fillPath(outline,glow)
                 p.setBrush(Qt.BrushStyle.NoBrush)
-                p.setPen(QPen(themed(97,239,220,int(175*self.hover_amount)),1.6))
+                ink=QColor(hover_color);ink.setAlpha(int(175*self.hover_amount))
+                p.setPen(QPen(ink,1.6))
                 p.drawPath(outline)
                 p.setPen(QPen(themed(102,255,227,int(90*self.hover_amount)),4))
                 p.drawLine(QPointF(1,1),QPointF(min(72,self.width()/2),1))
@@ -234,15 +239,23 @@ class MechPanel(QFrame):
                 fade=math.sin(math.pi*t)**1.5
                 glow=QRadialGradient(origin,radius)
                 for stop,alpha in ((0,0),(.55,0),(.72,7),(.84,22),(.94,9),(1,0)):
-                    ink=themed('#75e6e1');ink.setAlpha(round(alpha*fade))
+                    ink=self.ripple_color();ink.setAlpha(round(alpha*fade))
                     glow.setColorAt(stop,ink)
                 p.fillPath(outline,glow)
                 if t>.16:
                     echo=QRadialGradient(origin,max(2,radius*.64))
                     for stop,alpha in ((0,0),(.7,0),(.86,10),(1,0)):
-                        ink=themed('#75e6e1');ink.setAlpha(round(alpha*fade))
+                        ink=self.ripple_color();ink.setAlpha(round(alpha*fade))
                         echo.setColorAt(stop,ink)
                     p.fillPath(outline,echo)
+        if role=='card' and state_color:
+            # Draw last: hover feedback must never replace the workload color.
+            p.setClipping(False)
+            border=self.panel_path(QRectF(1.4,1.4,self.width()-2.8,self.height()-2.8))
+            ink=QColor(themed(state_color));ink.setAlpha(48 if not is_day() else 32)
+            p.setBrush(Qt.BrushStyle.NoBrush);p.setPen(QPen(ink,6));p.drawPath(border)
+            ink=QColor(themed(state_color));ink.setAlpha(255)
+            p.setPen(QPen(ink,2.1));p.drawPath(border)
 
 
 
@@ -252,6 +265,9 @@ class ModernButton(QPushButton):
         super().__init__(text)
         self.primary,self.ghost=primary,ghost
         self.phase=0.
+        self.resume_emphasis=False
+        self.monitor_action=None
+        self.action_glow=None
         self.keyboard_focus=False
         self.animation=QVariantAnimation(self)
         self.animation.setDuration(140)
@@ -270,6 +286,45 @@ class ModernButton(QPushButton):
 
     def minimumSizeHint(self):
         return self.sizeHint()
+
+    def set_resume_emphasis(self,enabled):
+        if self.resume_emphasis==enabled: return
+        self.resume_emphasis=enabled
+        self.sync_glow()
+        self.update()
+
+    def sync_glow(self):
+        self.glow_frame()
+
+    def set_monitor_action(self,action):
+        if action==self.monitor_action: return
+        self.monitor_action=action
+        if action and self.action_glow is None:
+            self.action_glow=QGraphicsDropShadowEffect(self)
+            self.action_glow.setOffset(0,0)
+            self.setGraphicsEffect(self.action_glow)
+        if self.action_glow: self.action_glow.setEnabled(action is not None)
+        self.sync_glow();self.glow_frame()
+
+    def glow_frame(self):
+        if self.action_glow and self.monitor_action:
+            color=QColor(themed('#ee7d8f',day='#b53551') if self.monitor_action=='pause' else themed('#65e69d',day='#219455'))
+            color.setAlpha(190)
+            self.action_glow.setColor(color)
+            self.action_glow.setBlurRadius(38)
+        self.update()
+
+    def showEvent(self,event):
+        super().showEvent(event)
+        self.sync_glow()
+
+    def hideEvent(self,event):
+        super().hideEvent(event)
+
+    def changeEvent(self,event):
+        super().changeEvent(event)
+        if event.type() in (QEvent.Type.PaletteChange,QEvent.Type.StyleChange) and hasattr(self,'action_glow'):
+            self.glow_frame()
 
     def setText(self,text):
         super().setText(text)
@@ -304,6 +359,9 @@ class ModernButton(QPushButton):
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
         a=themed('#62ddc1' if self.primary else '#17263a')
         b=themed('#99f4df' if self.primary else '#2c425a')
+        if self.monitor_action:
+            a=themed('#e37b8b',day='#ae3450') if self.monitor_action=='pause' else themed('#67dd9c',day='#197b4b')
+            b=themed('#f0a2ad',day='#c64961') if self.monitor_action=='pause' else themed('#9bf1be',day='#24965d')
         color=QColor(*[int(a.getRgb()[i]+(b.getRgb()[i]-a.getRgb()[i])*self.phase) for i in range(3)])
         if self.ghost:
             color.setAlpha(int(10+80*self.phase))
@@ -312,7 +370,15 @@ class ModernButton(QPushButton):
         p.setBrush(color)
         p.setPen(QPen(themed('#41576c' if not self.primary else '#7eefd4'),1) if not self.ghost else Qt.PenStyle.NoPen)
         p.drawPath(notch_path(QRectF(1,1,self.width()-2,self.height()-2),7))
+        if self.resume_emphasis or self.monitor_action:
+            p.setBrush(Qt.BrushStyle.NoBrush)
+            for inset,thickness,alpha in ((2,5,26),(2,3,46),(2,1.3,180)):
+                ink=QColor(themed('#ffd1da',day='#f1a6b5') if self.monitor_action=='pause' else themed('#baf6cf',day='#72d99b'));ink.setAlpha(alpha)
+                p.setPen(QPen(ink,thickness))
+                p.drawPath(notch_path(QRectF(inset,inset,self.width()-2*inset,self.height()-2*inset),6))
         fg=themed('#092f2b' if self.primary else '#ceddea') if self.isEnabled() else themed('#56677c')
+        if self.monitor_action and self.isEnabled():
+            fg=QColor('#fff5f7' if is_day() else '#35141e') if self.monitor_action=='pause' else QColor('#f0fff5' if is_day() else '#123723')
         p.setPen(fg)
         text=self.text().lstrip('+ ')
         font=self.font()
@@ -370,6 +436,9 @@ def fmt(value, suffix="", digits=0):
 class Backdrop(QWidget):
     def paintEvent(self, event):
         p = QPainter(self)
+        self.paint_backdrop(p)
+
+    def paint_backdrop(self,p):
         p.fillRect(self.rect(), themed("#080f1e"))
         for x, y, radius, color in ((self.width()*.75, 0, 600, themed(0,190,202,24)),
                                     (self.width()*.9, self.height(), 650, themed(110,57,220,23))):
@@ -423,6 +492,27 @@ class Sparkline(QWidget):
 
 
 class GPUCard(MechPanel):
+    def panel_path(self,rect):
+        path=notch_path(rect,10)
+        if not hasattr(self,'motion') or self.motion.state!='paused': return path
+        # Actual cutouts in the painted chassis, with unchanged widget geometry.
+        cuts=QPainterPath()
+        anchors=((rect.left()+rect.width()*.72,rect.top(),0),
+                 (rect.right(),rect.top()+rect.height()*.38,1),
+                 (rect.left()+rect.width()*.57,rect.bottom(),2),
+                 (rect.left(),rect.top()+rect.height()*.62,3))
+        for x,y,side in anchors:
+            polygon=[]
+            variation=math.sin((self.motion.seed+side*13)*.71)
+            half=4.2+variation;depth=8+variation*1.6
+            for u,v in ((-half,-2),(half,-2),(half*.65,2),(half*.1,depth*.7),(-half*.3,depth*.4),(-half*.75,depth)):
+                dx,dy=((u,v),(-v,u),(u,-v),(v,u))[side]
+                polygon.append(QPointF(x+dx,y+dy))
+            cut=QPainterPath(polygon[0])
+            for point in polygon[1:]:cut.lineTo(point)
+            cut.closeSubpath();cuts.addPath(cut)
+        return path.subtracted(cuts)
+
     def paint_background(self,p,rect):
         self.motion.paint(p,rect)
 
@@ -447,18 +537,27 @@ class GPUCard(MechPanel):
         box.setContentsMargins(17,12,17,12)
         box.setSpacing(5)
         self.title=label("","eyebrow")
-        self.state_label=StatusIndicator('未知',diamond_size=12)
+        self.state_label=StatusIndicator('不可用',diamond_size=12)
         set_style(self.state_label,'font-size:16px;font-weight:600')
         title_row=QHBoxLayout()
         title_row.setContentsMargins(0,0,0,0)
         title_row.addWidget(self.title,1)
-        title_row.addWidget(self.state_label)
+        title_row.setAlignment(self.title,Qt.AlignmentFlag.AlignTop)
+        status=QVBoxLayout()
+        status.setSpacing(0)
+        status.addWidget(self.state_label,0,Qt.AlignmentFlag.AlignRight)
+        self.pause_note=label('（暂停监控）')
+        self.pause_note.setFixedSize(104,18)
+        set_style(self.pause_note,'font-size:12px;color:#859faf')
+        self.pause_note.setAlignment(Qt.AlignmentFlag.AlignRight)
+        status.addWidget(self.pause_note)
+        title_row.addLayout(status)
         box.addLayout(title_row)
         self.name=label("")
         self.name.setWordWrap(True)
-        self.name.setMinimumHeight(24)
-        self.name.setMaximumHeight(44)
-        set_style(self.name,"font-size:17px;font-weight:600;color:#bdd5e9")
+        self.name.setMinimumHeight(30)
+        self.name.setMaximumHeight(54)
+        set_style(self.name,"font-size:21px;font-weight:600;color:#bdd5e9")
         self.metric_label=label("","metric")
         self.spark=Sparkline()
         self.memory=label("","muted")
@@ -470,8 +569,13 @@ class GPUCard(MechPanel):
         self.update_data(gpu,history,availability)
         self.enable_feedback()
 
+    def pulse_at(self,point):
+        super().pulse_at(point)
+        self.motion.boost()
+
     def update_data(self,g,history,availability=None):
-        self.title.setText(f"GPU {g['index']:02d}  /  {g['state']}")
+        self.motion.seed=sum((i+1)*ord(c) for i,c in enumerate(g['uuid']))%997
+        self.title.setText(f"GPU {g['index'] if g['index'] is not None else '—'}")
         self.title.setToolTip(g["uuid"])
         name=g["name"].replace("NVIDIA ","")
         self.name.setText(name)
@@ -491,8 +595,10 @@ class GPUCard(MechPanel):
         self.motion.set_state(visual)
         color='#78909f' if visual in ('blocked','disconnected','paused') else state['color']
         self.setProperty('availabilityColor',color)
+        self.setProperty('feedbackColor',state['color'] if state.get('historical') else color)
         self.state_label.setTone(state['color'] if state.get('historical') else color)
         self.state_label.setText(state['label'])
+        self.pause_note.setText('（暂停监控）' if visual=='paused' else '')
         self.state_label.setToolTip(state['reason'])
         set_style(self.metric_label,f'color:{color}')
         set_style(self.bar,f'QProgressBar::chunk {{background:{color};border-radius:0;}}')
@@ -500,6 +606,25 @@ class GPUCard(MechPanel):
         self.spark.update()
         self.setToolTip(state['label']+'：'+state['reason'])
         self.update()
+
+
+class CapsuleLabel(QLabel):
+    """Content-sized capsule with consistent round ends in both themes."""
+    def __init__(self,text,tone='#78a9bd'):
+        super().__init__(text)
+        self.tone=tone
+        self.setContentsMargins(10,2,10,2)
+        self.setFixedHeight(27)
+        self.setSizePolicy(QSizePolicy.Policy.Maximum,QSizePolicy.Policy.Fixed)
+        set_style(self,'font-size:13px;color:'+tone)
+
+    def paintEvent(self,event):
+        p=QPainter(self);p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        ink=QColor(themed(self.tone));fill=QColor(ink);fill.setAlpha(22)
+        outline=QColor(ink);outline.setAlpha(82)
+        p.setBrush(fill);p.setPen(QPen(outline,1))
+        p.drawRoundedRect(QRectF(.5,.5,self.width()-1,self.height()-1),self.height()/2,self.height()/2)
+        p.end();super().paintEvent(event)
 
 
 class HostTile(MechPanel):
@@ -523,21 +648,25 @@ class HostTile(MechPanel):
         self.endpoint=label(session.profile['host'],"muted")
         box.addWidget(self.endpoint)
         self.summary=label("","muted")
-        box.addWidget(self.summary)
-        self.capacity=label('空闲 — · 可用 —','muted')
-        set_style(self.capacity,'font-size:14px;color:#78a9bd')
-        box.addWidget(self.capacity)
+        info=QHBoxLayout();info.setSpacing(6)
+        self.gpu_count=CapsuleLabel('显卡 — 张')
+        info.addWidget(self.summary,1);info.addWidget(self.gpu_count)
+        box.addLayout(info)
+        self.capacity=CapsuleLabel('空闲 — · 可用 —')
+        box.addWidget(self.capacity,0,Qt.AlignmentFlag.AlignLeft)
         self.bar=QProgressBar()
         self.bar.setTextVisible(False)
         box.addWidget(self.bar)
-        for text in (self.name,self.endpoint,self.summary,self.capacity):
+        for text in (self.name,self.endpoint,self.summary):
             text.setMinimumWidth(0)
             text.setSizePolicy(QSizePolicy.Policy.Ignored,QSizePolicy.Policy.Preferred)
         self.update_data(session)
 
     def update_data(self,session,selected=False):
         no_gpu=session.gpu_hint=='no_gpu'
-        set_style(self.capacity,'font-size:14px;color:'+('#7a8c97' if no_gpu else '#78a9bd'))
+        self.capacity.tone='#7a8c97' if no_gpu else '#63dec1' if session.fresh else '#78a9bd'
+        set_style(self.capacity,'font-size:13px;color:'+self.capacity.tone)
+        self.gpu_count.setText('无 GPU' if no_gpu else f"显卡 {len(session.snapshot['gpus'])} 张" if session.snapshot else '显卡 — 张')
         self.setProperty('noGpu',no_gpu)
         self.setProperty("selected",selected)
         self.style().unpolish(self)
@@ -552,7 +681,7 @@ class HostTile(MechPanel):
             gs=session.snapshot['gpus']
             utils=[g['util'] for g in gs if g['util'] is not None]
             avg=sum(utils)/len(utils) if utils else None
-            self.summary.setText(f"{session.state}  ·  {len(gs)} GPU  ·  {fmt(avg,'%')}" if gs else session.state+(' · SSH 保活' if session.fresh else ''))
+            self.summary.setText(f"{session.state} · {fmt(avg,'%')}" if gs else session.state)
             self.bar.setValue(int(avg or 0))
             self.bar.setVisible(bool(gs))
         else:
@@ -570,7 +699,7 @@ class HostTile(MechPanel):
             self.capacity.setText(f"空闲 {counts['idle']} · 可用 {counts['available']} / {counts['total']}"+(' · 待确认' if counts['unknown'] else ''))
         else:
             self.capacity.setText('空闲 — · 可用 —')
-        self.capacity.setToolTip('可用数量包含空闲卡；根据当前显存门槛、负载、进程、设备状态及连续采样判断。暂停和过期数据不计为可用。')
+        self.capacity.setToolTip('可用数量包含空闲卡和连续确认后的轻量占用卡；根据当前资源门槛及设备状态判断。暂停和过期数据不计为可用。')
         self.update()
 
 

@@ -62,11 +62,13 @@ def test_endpoint_change_and_corrupt_cache_do_not_load_wrong_host(window):
 
 def test_pause_keeps_last_status_color_across_restart_without_advertising_capacity(window):
     s=sample(window)
+    assert window.cards['GPU-1'].pause_note.text()==''
     before=dict(s.gpu_availability('GPU-1'))
     s.pause();window.persist_session_preferences()
     card=window.cards['GPU-1']
     assert card.state_label.text()==before['label']
     assert card.state_label.tone.name()==before['color']
+    assert not card.pause_note.isHidden() and card.pause_note.text()=='（暂停监控）'
     assert card.state_label.diamond_size==12
     assert s.availability_counts() is None and not s.gpu_availability('GPU-1')['available']
     fresh=type(window)(autostart=False,session_factory=window.session_factory)
@@ -75,10 +77,32 @@ def test_pause_keeps_last_status_color_across_restart_without_advertising_capaci
         badge=fresh.cards['GPU-1'].state_label
         assert restored.state=='已暂停' and restored.historical
         assert badge.text()==before['label'] and badge.tone.name()==before['color']
+        assert not fresh.cards['GPU-1'].pause_note.isHidden()
         assert restored.availability_counts() is None
         assert not restored.gpu_availability('GPU-1')['available']
     finally:
         fresh.close()
+
+
+def test_light_status_is_counted_live_but_only_shown_as_history_after_pause(window,monkeypatch):
+    import sessions
+    from test_availability import gpu
+    clock=[100.]
+    monkeypatch.setattr(sessions.time,'monotonic',lambda:clock[0])
+    window.connect_all();s=window.selected
+    data=snapshot(1)
+    data['gpus'][0].update(gpu(uuid='GPU-1',used=410.,free=24166.))
+    data['processes'][0]['memory']=410.
+    for now in (100.,105.,110.):
+        clock[0]=now;s.worker.data.emit(data)
+    assert s.gpu_availability('GPU-1')['status']=='light'
+    assert s.availability_counts()['available']==s.availability_counts()['light']==1
+    assert s.availability_counts()['idle']==0
+    s.pause()
+    restored=HostSession(s.profile,factory=FakeMonitor)
+    state=restored.gpu_availability('GPU-1')
+    assert state['label']=='轻量占用' and state['historical'] and not state['available']
+    assert restored.availability_counts() is None
 
 
 def test_cache_write_failure_does_not_stop_live_monitor(window,monkeypatch):

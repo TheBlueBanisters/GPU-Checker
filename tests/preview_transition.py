@@ -32,22 +32,24 @@ with tempfile.TemporaryDirectory(prefix='gpu-transition-demo-') as directory:
     for module in (ui,profiles,backend):module.DATA=Path(directory)
     profiles.save([profiles.clean({'host':'demo.invalid','name':'模拟数据 · 遥测过渡演示','autoconnect':False})])
     w=ui.Window(autostart=False,session_factory=lambda p,parent:HostSession(p,parent,factory=FakeMonitor))
-    w.resize(1420,940);w.show();application.processEvents()
+    w.show();w.resize(1720,1000);application.processEvents()
     out=ROOT/'build/transition-frames';out.mkdir(parents=True,exist_ok=True)
     index=0
+    frames=[]
     region=QRect(294,54,w.width()-310,w.height()-66)
     def capture(count):
         global index
         for _ in range(count):
             QTest.qWait(40)
-            w.grab(region).scaledToWidth(1000,Qt.TransformationMode.SmoothTransformation).save(str(out/f'frame-{index:03d}.png'))
+            frames.append(w.grab(region).scaledToWidth(1000,Qt.TransformationMode.SmoothTransformation).toImage())
             index+=1
     capture(10)
     s=w.selected;s.start()
     for i in range(5):s.history[f'DEMO-{i}']=deque([85-i*2+math.sin(j*.8)*2 for j in range(60)],maxlen=60)
-    s.worker.data.emit(data(88));capture(26)
-    s.pause();capture(26)
-    s.start();s.worker.data.emit(data(48));capture(26)
+    s.worker.data.emit(data(88));capture(38)
+    s.pause();capture(38)
+    s.start();s.worker.data.emit(data(48));capture(38)
     assert w.telemetry_transition.started_count==3
     w.close();application.processEvents()
-print('Synthetic transition frames:',index)
+    for index,frame in enumerate(frames):frame.save(str(out/f'frame-{index:03d}.png'))
+print('Synthetic transition frames:',len(frames))

@@ -2,9 +2,9 @@
 from dataclasses import dataclass,asdict
 import math
 
-COLORS={'idle':'#63dec1','available':'#65bde9','busy':'#d9a86c','blocked':'#78909f',
+COLORS={'idle':'#63dec1','available':'#65bde9','light':'#e8ca67','busy':'#ed8948','blocked':'#78909f',
         'unknown':'#78909f','observing':'#859faf'}
-LABELS={'idle':'空闲','available':'可用','busy':'占用','blocked':'不可用','unknown':'未知','observing':'观察中'}
+LABELS={'idle':'空闲','available':'可用','light':'轻量占用','busy':'占用','blocked':'不可用','unknown':'不可用','observing':'观察中'}
 
 
 @dataclass(frozen=True)
@@ -14,10 +14,15 @@ class Rules:
     max_util: float=10
     stable_seconds: float=10
     min_samples: int=3
+    light_max_util: float=10
+    light_used_mib: float=4096
+    light_used_fraction: float=.10
 
     def __post_init__(self):
         if not (512<=self.free_mib<=524288 and 0<=self.free_fraction<=.95 and 0<=self.max_util<=90
-                and 3<=self.stable_seconds<=120 and 3<=self.min_samples<=30):
+                and 3<=self.stable_seconds<=120 and 3<=self.min_samples<=30
+                and 0<=self.light_max_util<=90 and 512<=self.light_used_mib<=65536
+                and .01<=self.light_used_fraction<=.50):
             raise ValueError('可用性规则超出有效范围')
 
     def as_dict(self):
@@ -26,7 +31,7 @@ class Rules:
 
 def result(status,reason):
     return {'status':status,'label':LABELS[status],'color':COLORS[status],'reason':reason,
-            'idle':status=='idle','available':status in ('idle','available')}
+            'idle':status=='idle','available':status in ('idle','available','light')}
 
 
 def finite(value):
@@ -58,9 +63,10 @@ def candidate(g,processes,rules):
         return result('unknown','未确认当前命名空间内的 NVIDIA 设备节点权限')
     if g.get('process_query_ok') is not True:
         return result('unknown','进程查询缺失或受限，无法确认是否有人占卡')
-    # A live compute context is occupied even when utilization momentarily reads zero.
-    if any(str(p.get('kind','')).strip().upper() not in ('G',) for p in processes):
-        return result('busy','存在计算／MPS／未识别的 GPU 进程，不能视为空闲')
+    kinds=[str(p.get('kind','')).strip().upper() for p in processes]
+    if any(kind not in ('G','C','C+G') for kind in kinds) or any('mps' in str(p.get('name','')).lower() for p in processes):
+        return result('busy','存在 MPS／未识别的 GPU 进程，不能确认可共卡')
+    compute=[p for p,kind in zip(processes,kinds) if kind!='G']
     if mode not in ('default','exclusive_process','exclusive_thread'):
         return result('unknown','无法确认 Compute Mode 是否允许计算')
     if mode!='default' and processes:
@@ -73,6 +79,13 @@ def candidate(g,processes,rules):
     required=max(rules.free_mib,total*rules.free_fraction)
     if free<required:
         return result('busy',f'剩余显存不足：需要至少 {required/1024:.1f} GiB')
+    if compute:
+        known=all(str(p.get('pid','')).isdigit() and p.get('name') and
+                  finite(p.get('memory')) and p['memory']>=0 for p in compute)
+        limit=min(rules.light_used_mib,total*rules.light_used_fraction)
+        if known and mode=='default' and util<=rules.light_max_util and used<=limit:
+            return result('light',f'已有计算进程；负载低且占用不超过 {limit/1024:.1f} GiB，设备允许共享。仅为当前资源提示，不预留资源')
+        return result('busy','已有计算进程，负载／显存超出轻量门槛或进程数据不完整')
     idle_memory=min(1024,max(256,total*.02))
     if not processes and used>idle_memory:
         return result('unknown','显存占用较大却没有可见进程，不能确认归属')
@@ -87,31 +100,47 @@ class Tracker:
     def __init__(self,rules=None):
         self.rules=rules or Rules()
         self.runs={}
+        self.verdicts={}
 
     def reset(self):
         self.runs.clear()
+        self.verdicts.clear()
 
     def observe(self,snapshot,now,interval):
         states={}
         ids={g['uuid'] for g in snapshot['gpus']}
         self.runs={key:value for key,value in self.runs.items() if key in ids}
+        self.verdicts={key:value for key,value in self.verdicts.items() if key in ids}
         for g in snapshot['gpus']:
             key=g['uuid']
+            previous=self.verdicts.get(key)
+            if previous and (now<previous['time'] or now-previous['time']>max(10,interval*2+5)):
+                self.runs.pop(key,None)
+                previous=None
             ps=[p for p in snapshot['processes'] if p.get('uuid')==key]
             state=candidate(g,ps,self.rules)
             if state['available']:
                 old=self.runs.get(key)
-                if not old or old['status']!=state['status'] or now<old['last'] or now-old['last']>max(10,interval*2+5):
-                    run={'status':state['status'],'since':now,'count':0,'last':now}
+                if not old:
+                    run={'status':state['status'],'since':now,'count':0,'last':now,
+                         'category_since':now,'category_count':0}
                 else:
                     run=old
+                if run['status']!=state['status']:
+                    run.update(status=state['status'],category_since=now,category_count=0)
                 run['count']+=1
+                run['category_count']+=1
                 run['last']=now
                 self.runs[key]=run
                 elapsed=now-run['since']
                 if elapsed<self.rules.stable_seconds or run['count']<self.rules.min_samples:
-                    state=result('observing',f"连续确认中：{elapsed:.0f}/{self.rules.stable_seconds:g} 秒，{run['count']}/{self.rules.min_samples} 次采样")
+                    reason=f"连续确认中：{elapsed:.0f}/{self.rules.stable_seconds:g} 秒，{run['count']}/{self.rules.min_samples} 次采样"
+                    held=previous['state']['status'] if previous and previous['state']['status'] in ('busy','blocked') else 'observing'
+                    state=result(held,reason+('；恢复确认结束前保留原判定' if held!='observing' else ''))
+                elif state['status']=='idle' and (now-run['category_since']<self.rules.stable_seconds or run['category_count']<self.rules.min_samples):
+                    state=result('available','资源连续满足门槛；等待无进程／低后台占用状态持续稳定后再标为空闲')
             else:
                 self.runs.pop(key,None)
+            self.verdicts[key]={'time':now,'state':dict(state)}
             states[key]=state
         return states

@@ -5,6 +5,8 @@ from PySide6.QtWidgets import QApplication, QFileDialog
 import app as ui
 import backend
 import profiles
+from sessions import HostSession
+from test_multihost import FakeMonitor
 
 
 def test_import_export_and_fresh_machine_import(tmp_path, monkeypatch):
@@ -18,7 +20,8 @@ def test_import_export_and_fresh_machine_import(tmp_path, monkeypatch):
     config.write_text("Host cluster\n HostName example.test\n User alice\n IdentityFile ~/.ssh/id_ed25519\n", encoding="utf-8")
     monkeypatch.setattr(QFileDialog, "getOpenFileName", lambda *a, **k: (str(config), ""))
     monkeypatch.setattr(ui.Window, "notify", lambda *a: None)
-    w = ui.Window(autostart=False)
+    factory=lambda p,parent:HostSession(p,parent,factory=FakeMonitor)
+    w = ui.Window(autostart=False,session_factory=factory)
     w.import_ssh()
     assert w.selected.profile['host'] == "cluster"
     assert (original / "ssh_config").exists()
@@ -34,7 +37,7 @@ def test_import_export_and_fresh_machine_import(tmp_path, monkeypatch):
     moved.mkdir()
     for module in (ui, profiles, backend):
         monkeypatch.setattr(module, "DATA", moved)
-    fresh = ui.Window(autostart=False)
+    fresh = ui.Window(autostart=False,session_factory=factory)
     monkeypatch.setattr(QFileDialog, "getOpenFileName", lambda *a, **k: (str(exported), ""))
     fresh.import_ssh()
     assert fresh.selected.profile['host'] == "cluster"
