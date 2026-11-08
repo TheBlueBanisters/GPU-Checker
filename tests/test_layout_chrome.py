@@ -46,7 +46,7 @@ def test_host_actions_equal_and_process_count_separate(window):
     w.connect_all()
     w.selected.worker.data.emit(snapshot(1))
     assert w.process_title.text()=='用卡进程' and w.process_count.text()=='01'
-    assert w.badge.height()==26
+    assert w.badge.height()==round(26*w.property('uiDensity'))
 
 
 def test_process_hover_highlights_row_without_changing_selection(window):
@@ -143,7 +143,7 @@ def test_custom_title_bar_maximize_restore_and_resize_handles(window):
     assert w.windowFlags() & Qt.WindowType.FramelessWindowHint
     w.show()
     QApplication.processEvents()
-    assert w.title_bar.height()==48
+    assert w.title_bar.height()==round(48*w.property('uiDensity'))
     assert len(w.resize_handles)==8
     maximize=next(c for c in w.title_bar.findChildren(WindowControl) if c.kind=='max')
     maximize.click()

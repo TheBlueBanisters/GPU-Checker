@@ -20,7 +20,7 @@ def test_restart_restores_frozen_gpu_curve_and_process_directory(window):
     try:
         fresh.show();QApplication.processEvents()
         s=fresh.sessions[old.id]
-        assert next(iter(fresh.cards.values())).width()==270
+        assert next(iter(fresh.cards.values())).width()==round(270*fresh.property('uiDensity'))
         assert s.snapshot['gpus'][0]['used']==old.snapshot['gpus'][0]['used']
         assert s.snapshot['processes'][0]['cwd']=='/host1/work'
         assert list(s.history['GPU-1'])==list(old.history['GPU-1']) and len(s.history['GPU-1'])==60

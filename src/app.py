@@ -1,5 +1,6 @@
 from themes import set_style
 import themes
+import ui_density
 import storage
 from version import APP_VERSION
 from host_list import HostList
@@ -128,11 +129,17 @@ class Window(QMainWindow):
         sb.addLayout(brand)
         sb.addWidget(label('MULTI-HOST / SECURE SHELL','eyebrow'))
         sb.addSpacing(18)
-        row=QHBoxLayout()
-        row.addWidget(label('主机舰队','section'),1)
+        self.host_header=QWidget()
+        self.host_header.setFixedHeight(36)
+        self.host_header.setMinimumWidth(0)
+        self.host_header.setSizePolicy(QSizePolicy.Policy.Ignored,QSizePolicy.Policy.Fixed)
+        row=QHBoxLayout(self.host_header);row.setContentsMargins(0,0,0,0)
+        self.host_heading=label('主机舰队','section')
+        row.addWidget(self.host_heading,1)
         self.host_count=label('00','eyebrow')
-        row.addWidget(self.host_count)
-        sb.addLayout(row)
+        self.host_count.setAlignment(Qt.AlignmentFlag.AlignRight|Qt.AlignmentFlag.AlignVCenter)
+        row.addWidget(self.host_count,0,Qt.AlignmentFlag.AlignVCenter)
+        sb.addWidget(self.host_header)
         self.host_search=QLineEdit()
         self.host_search.setPlaceholderText('搜索主机…')
         self.host_search.textChanged.connect(self.filter_hosts)
@@ -164,6 +171,7 @@ class Window(QMainWindow):
             text.setMinimumWidth(0)
             text.setSizePolicy(QSizePolicy.Policy.Ignored,QSizePolicy.Policy.Preferred)
         self.host_count.setFixedWidth(28)
+        self.host_count.setSizePolicy(QSizePolicy.Policy.Fixed,QSizePolicy.Policy.Preferred)
         self.side_scroll.setWidget(side)
         root.addWidget(self.side_scroll)
         self.dashboard_scroll=QScrollArea()
@@ -877,31 +885,42 @@ class Window(QMainWindow):
 
     def size_cards(self):
         # Reserve the GPU lane independently of card count and monitoring state.
-        height=max(308,min(500,int(self.height()*.32)))
+        scale=float(self.property('uiDensity') or 1.)
+        ui_density.apply(self,scale,STYLE)
+        self.card_layout.setSpacing(12)
+        self.card_layout.setContentsMargins(0,0,8,18)
+        height=max(round(308*scale),min(round(420*scale),int(self.height()*.32)))
         if self.card_scroll.height()!=height:self.card_scroll.setFixedHeight(height)
         if self.cards:
             margins=self.card_layout.contentsMargins()
             available=max(240,self.card_scroll.viewport().width()-margins.left()-margins.right())
-            columns=max(1,min(len(self.cards),(available+12)//252))
-            width=min(270,(available-12*(columns-1))//columns)
-            key=(columns,width,tuple((uuid,id(card)) for uuid,card in self.cards.items()))
+            columns=max(1,min(len(self.cards),(available+12)//(round(240*scale)+12)))
+            width=min(round(270*scale),(available-12*(columns-1))//columns)
+            key=(columns,width,scale,tuple((uuid,id(card)) for uuid,card in self.cards.items()))
             if getattr(self,'_card_grid_key',None)!=key:
                 for card in self.cards.values():self.card_layout.removeWidget(card)
                 for index,card in enumerate(self.cards.values()):
-                    card.setFixedSize(width,270)
+                    card.setFixedSize(width,round(270*scale))
                     self.card_layout.addWidget(card,index//columns,index%columns,Qt.AlignmentFlag.AlignLeft|Qt.AlignmentFlag.AlignTop)
                 self._card_grid_key=key
                 self.card_layout.invalidate();self.card_layout.activate()
 
     def adapt_layout(self):
         if not hasattr(self,'metrics_layout'): return
-        self.side_scroll.setFixedWidth(248 if self.width()<1150 else 282)
+        scale=ui_density.factor(self.width(),self.height())
+        ui_density.apply(self,scale,STYLE)
+        self.side_scroll.setFixedWidth(round(282*scale))
+        for index in range(self.host_list.count()):
+            self.host_list.item(index).setSizeHint(QSize(round(230*scale),round(156*scale)))
         short=self.height()<850
-        self.sidebar_layout.setSpacing(8 if short else 13)
-        self.sidebar_layout.setContentsMargins(12 if short else 18,14 if short else 25,12 if short else 18,14 if short else 19)
+        self.sidebar_layout.setSpacing(round((8 if short else 13)*scale))
+        self.sidebar_layout.setContentsMargins(*(round(v*scale) for v in ((12 if short else 18),(14 if short else 25),(12 if short else 18),(14 if short else 19))))
+        margins=self.sidebar_layout.contentsMargins()
+        self.host_header.setFixedHeight(round(36*scale))
+        self.host_count.setFixedWidth(max(round(32*scale),self.host_count.fontMetrics().horizontalAdvance(self.host_count.text())+4))
         width=self.dashboard_scroll.viewport().width()
         compact=width<850
-        self.content_layout.setContentsMargins(12 if compact else 27,14,12 if compact else 27,14)
+        self.content_layout.setContentsMargins(*(round(v*scale) for v in ((12 if compact else 27),14,(12 if compact else 27),14)))
         columns=2 if compact else 4
         for index,value in enumerate(self.stats):
             frame=value.parentWidget()
@@ -911,17 +930,20 @@ class Window(QMainWindow):
         self.hero_header.setDirection(QBoxLayout.Direction.TopToBottom if width<650 else QBoxLayout.Direction.LeftToRight)
         self.gpu_header.setDirection(QBoxLayout.Direction.TopToBottom if width<700 else QBoxLayout.Direction.LeftToRight)
         for button in (self.connect_button,self.edit_button,self.remove_button):
-            button.setFixedWidth(128 if width<650 else 140)
+            button.setFixedWidth(round((128 if width<650 else 140)*scale))
+        self.table.verticalHeader().setDefaultSectionSize(round(44*scale))
         self.size_cards()
         self.fit_stat_values()
 
     def fit_stat_values(self):
         for value in self.stats:
-            font=QFont(value.font());font.setPixelSize(24)
+            scale=float(self.property('uiDensity') or 1.)
+            base=round(24*scale)
+            font=QFont(value.font());font.setPixelSize(base)
             natural=QFontMetrics(font).horizontalAdvance(value.text())
-            pixels=max(14,min(24,int(24*max(1,value.width()-2)/max(1,natural))))
+            pixels=max(11,min(base,int(base*max(1,value.width()-2)/max(1,natural))))
             tone={'empty':'#5d7890','frozen':'#859faf','live':'#8fc8de'}.get(value.property('telemetryMode'),'#8fc8de')
-            set_style(value,f'font-size:{pixels}px;color:{tone}')
+            set_style(value,f'font-size:{pixels/scale:.2f}px;color:{tone}')
 
     def resizeEvent(self,event):
         super().resizeEvent(event)

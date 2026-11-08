@@ -52,7 +52,7 @@ def test_compact_layout_wraps_and_keeps_content_reachable(window):
         assert window.dashboard.width()<=window.dashboard_scroll.viewport().width()
         assert window.side_scroll.widget().width()<=window.side_scroll.viewport().width()
         boxes=[card.geometry() for card in window.cards.values()]
-        assert all(box.width()>=240 for box in boxes)
+        assert all(box.width()>=round(240*window.property('uiDensity')) for box in boxes)
         assert all(not a.intersects(b) for i,a in enumerate(boxes) for b in boxes[i+1:])
         window.card_scroll.verticalScrollBar().setValue(window.card_scroll.verticalScrollBar().maximum())
         QApplication.processEvents()
@@ -93,3 +93,23 @@ def test_gpu_card_spacing_stays_compact_after_count_and_width_changes(window):
             for row in rows.values():
                 row.sort(key=lambda rect:rect.left())
                 assert all(b.left()-a.right()-1==12 for a,b in zip(row,row[1:]))
+
+
+def test_small_window_scales_components_and_fleet_count_remains_inside(window):
+    window.show();window.connect_all();window.selected.worker.data.emit(snapshot(1))
+    sizes=[]
+    for width,height in ((1920,1080),(1280,720),(960,600),(1920,1080)):
+        window.resize(width,height);QApplication.processEvents();QTest.qWait(50)
+        card=next(iter(window.cards.values()))
+        sizes.append((card.height(),window.title_bar.height(),window.side_scroll.width()))
+        for _ in range(3):
+            window.render_status();QApplication.processEvents()
+            assert card.height()==round(270*window.property('uiDensity'))
+        header=window.host_header;counter=window.host_count
+        assert counter.geometry().right()<header.width()
+        assert abs(counter.geometry().center().y()-header.rect().center().y())<=2
+        assert counter.fontMetrics().horizontalAdvance(counter.text())<=counter.width()
+        right=counter.mapTo(window.side_scroll.viewport(),counter.rect().topRight())
+        assert right.x()<window.side_scroll.viewport().width()
+    assert all(small<large for small,large in zip(sizes[1],sizes[0]))
+    assert sizes[0]==sizes[-1]  # Repeated screen/window moves cannot compound scaling.

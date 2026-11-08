@@ -80,7 +80,7 @@ def test_theme_updates_existing_and_new_widgets_and_persists(window):
         assert themes.is_day()
         assert [s.worker for s in w.sessions.values()]==workers
         gpu=next(iter(w.cards.values()))
-        assert '21px' in gpu.name.styleSheet() and gpu.name.text()=='test'
+        assert f"{round(21*w.property('uiDensity'))}px" in gpu.name.styleSheet() and gpu.name.text()=='test'
         w.toggle_theme()
         assert not themes.is_day() and '#0d1d30' in w.title_bar.styleSheet()
     finally:

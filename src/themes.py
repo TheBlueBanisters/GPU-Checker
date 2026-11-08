@@ -55,7 +55,9 @@ def color(night,*args,day=None):
     return mapped
 
 
-def style_for(css):
+def style_for(css,scale=1.):
+    from ui_density import css as sized_css
+    css=sized_css(css,scale)
     if not is_day():
         return css
     css=re.sub(r'rgba\((\d+),(\d+),(\d+),(\d+)\)',
@@ -65,7 +67,8 @@ def style_for(css):
 
 def set_style(widget,css):
     widget.setProperty('_nightStyle',css)
-    widget.setStyleSheet(style_for(css))
+    from ui_density import current
+    widget.setStyleSheet(style_for(css,current(widget)))
 
 
 def apply(app,mode,base_style):
@@ -85,7 +88,8 @@ def apply(app,mode,base_style):
         if not isValid(widget): continue
         css=widget.property('_nightStyle')
         if isinstance(css,str):
-            widget.setStyleSheet(style_for(css))
+            from ui_density import current
+            widget.setStyleSheet(style_for(css,current(widget)))
         if not isValid(widget): continue
         if getattr(widget,'kind',None)=='theme':
             widget.sync_theme_label()
