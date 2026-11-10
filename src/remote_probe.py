@@ -74,6 +74,7 @@ def parse_xml(xml, details=process_details, indices=None):
         index=indices.get(uuid) if indices is not None else int(native) if native.isdigit() else None
         g = {"index": index, "uuid": text(gpu, "uuid"), "name": text(gpu, "product_name"),
              "util": number(text(gpu, "utilization/gpu_util")),
+             "mem_util": number(text(gpu, "utilization/memory_util")),
              "used": number(text(gpu, "fb_memory_usage/used")),
              "total": number(text(gpu, "fb_memory_usage/total")),
              'free':number(text(gpu,'fb_memory_usage/free')),

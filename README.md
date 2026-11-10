@@ -4,7 +4,9 @@ Windows 多主机 NVIDIA GPU 监控工具。通过 SSH 实时查看显卡、用�
 
 ## 下载与使用
 
-到 [Releases](https://github.com/TheBlueBanisters/GPU-Checker/releases/latest) 下载 Windows x64 ZIP，解压后运行 `GPUChecker.exe`，无需安装 Python。
+到 [Releases](https://github.com/TheBlueBanisters/GPU-Checker/releases/latest) 下载 Windows x64 ZIP，完整解压后运行 `GPUChecker.exe`，无需安装 Python。目录版需要保留同目录的 `_internal` 文件夹。
+
+**Windows 智能应用控制**：现有旧版 EXE 未签名，可能因“无法验证发布者”被拦截。仓库已加入正式发行签名检查，但目前尚无可信发布者证书，不能保证旧版或未签名测试包通过智能应用控制。SHA-256 校验不等于发布者签名。请参阅 [微软签名要求](https://learn.microsoft.com/en-us/windows/apps/develop/smart-app-control/code-signing-for-smart-app-control)。
 
 1. 添加主机，或导入／粘贴 SSH config。
 2. 需要输入服务器密码的主机，按下方“密码登录与记住密码”设置；已配置免密的主机可使用 OpenSSH 或私钥。
@@ -16,7 +18,7 @@ Windows 多主机 NVIDIA GPU 监控工具。通过 SSH 实时查看显卡、用�
 
 1. 点击“添加主机”；如果已导入 SSH config，选中左侧对应主机，再点击“编辑”。
 2. 填写或核对“主机”“用户名”“端口”。主机可填域名、IP 或已导入的 SSH 别名；端口按服务器设置填写，通常为 `22`。
-3. 将“认证方式”改为 **“密码登录（内置）”**，在“密码 / 私钥口令”中输入**服务器登录密码**，无需填写私钥文件。仅导入 SSH config 不会保存密码，也不会自动切换成密码登录。
+3. 将“认证方式”改为 **“密码登录（内置）”**，在“服务器密码”中输入**服务器登录密码**，无需填写私钥文件。仅导入 SSH config 不会保存密码；在免密模式的密码框中输入服务器密码，会自动切换为密码登录，也可点击“使用密码”。
 4. 勾选 **“记住密码（Windows 凭据管理器，用于自动连接）”** 和 **“启动程序时自动监控此主机”**；需要断线重连时，再保留“连接中断后自动重连”。
 5. 点击 **“保存并监控”**。首次连接按提示核对并确认服务器指纹；认证成功后即可监控，无 GPU 主机也会保持 SSH 连接。
 
@@ -32,6 +34,7 @@ Windows 多主机 NVIDIA GPU 监控工具。通过 SSH 实时查看显卡、用�
 
 - GPU 显示负载、显存、温度、功耗和趋势；进程可查看用户与目录。
 - 彩色菱形区分空闲、可用、轻量占用、占用和不可用状态；可用性是资源提示，不预留资源。
+- GPU／主机卡片右下角“历史”查看显存占用量与显存利用率曲线；历史缓存可设上限，最多 1 GB，自动清理最老数据。
 - 离线保留最后快照；暂停时保留上次 GPU 状态标记，历史数据不计入当前可用数量。
 - 无 GPU 主机也能保持 SSH 连接。采集只读，不控制服务器进程。
 - 支持按窗口空间自适应调整卡片、字号和间距，兼容系统缩放与日夜渐变切换；连续点击 GPU 卡片可触发粉尘爆炸彩蛋，附带轻盈短音效，仅影响本地界面。
@@ -48,4 +51,6 @@ Windows 多主机 NVIDIA GPU 监控工具。通过 SSH 实时查看显卡、用�
 .\build.ps1
 ```
 
-成品位于 `delivery/releases/`。第三方声明及许可证见 [THIRD_PARTY_NOTICES](delivery/THIRD_PARTY_NOTICES.md)。
+正式构建需要当前 Windows 用户证书库中的可信代码签名证书（通过 `GPUCHECKER_SIGNING_THUMBPRINT` 指定）及 Windows SDK SignTool；EXE、DLL、PYD 验签通过后，成品才会写入 `delivery/releases/`。证书与时间戳流程尚待有真实发布证书后验证。
+
+仅用于本地测试、没有证书时运行 `./build.ps1 -DevelopmentUnsigned`，产物位于 `delivery/development/`，文件名标有 `UNSIGNED-DEVELOPMENT`，仍可能被智能应用控制拦截。构建不会更改 Windows 安全设置。第三方声明及许可证见 [THIRD_PARTY_NOTICES](delivery/THIRD_PARTY_NOTICES.md)。

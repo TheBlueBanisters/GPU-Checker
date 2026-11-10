@@ -22,3 +22,11 @@ host_catalog.json
 
 storage_migration.json
 storage-probe.json
+
+history/
+history_settings.json
+
+# Publisher private keys must never enter source archives or Git.
+*.pfx
+*.p12
+*.key

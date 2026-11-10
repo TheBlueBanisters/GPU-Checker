@@ -1,5 +1,5 @@
 """List-owned feedback keeps passive host tiles clickable as ordinary list items."""
-from PySide6.QtCore import QTimer,QEvent,QPointF,QVariantAnimation,QEasingCurve
+from PySide6.QtCore import QTimer,QEvent,QPointF,QVariantAnimation,QEasingCurve,Qt
 from PySide6.QtWidgets import QListWidget,QAbstractItemView,QApplication
 
 
@@ -82,11 +82,25 @@ class HostList(QListWidget):
             self.scroll_animation.start()
         event.accept()
 
+    def mousePressEvent(self,event):
+        item=self.itemAt(event.position().toPoint())
+        tile=self.itemWidget(item) if item else None
+        if tile and event.button()==Qt.MouseButton.LeftButton:
+            point=tile.mapFrom(self.viewport(),event.position().toPoint())
+            if tile.history_button.rect().contains(tile.history_button.mapFrom(tile,point)):
+                self._history_press=True;tile.history_button.click();event.accept();return
+        self._history_press=False;super().mousePressEvent(event)
+
+    def mouseReleaseEvent(self,event):
+        if getattr(self,'_history_press',False):self._history_press=False;event.accept();return
+        super().mouseReleaseEvent(event)
+
     def reset_hover(self):
         self.wave_timer.stop()
         if self.hovered_item:
             tile=self.itemWidget(self.hovered_item)
             if tile:
+                tile.history_button.setAttribute(Qt.WidgetAttribute.WA_UnderMouse,False);tile.history_button.update()
                 tile._hover_to(0.)
                 tile.clear_ripples()
         self.hovered_item=None
@@ -109,6 +123,7 @@ class HostList(QListWidget):
             tile=self.itemWidget(item)
             if tile:
                 self.hover_point=QPointF(tile.mapFrom(self.viewport(),event.position().toPoint()))
+                tile.history_button.setAttribute(Qt.WidgetAttribute.WA_UnderMouse,tile.history_button.rect().contains(tile.history_button.mapFrom(tile,self.hover_point.toPoint())));tile.history_button.update()
                 tile.feedback_point=self.hover_point
                 tile._hover_to(1.)
                 tile.update()

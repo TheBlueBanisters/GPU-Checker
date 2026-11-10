@@ -7,10 +7,11 @@ import paramiko
 import pytest
 import backend
 import profiles
+from test_multihost import window
 
 
-@pytest.mark.parametrize("scenario", ["accept", "reject", "changed", "badpassword"])
-def test_password_login_unknown_host_and_stream(tmp_path, monkeypatch, scenario):
+@pytest.mark.parametrize("scenario", ["accept", "reject", "changed", "badpassword", "dialog-saved"])
+def test_password_login_unknown_host_and_stream(tmp_path, monkeypatch, scenario, window):
     monkeypatch.setattr(backend, "DATA", tmp_path)
     monkeypatch.setattr(backend, "config_path", lambda: tmp_path / "absent")
     server_key = paramiko.RSAKey.generate(2048)
@@ -56,7 +57,28 @@ def test_password_login_unknown_host_and_stream(tmp_path, monkeypatch, scenario)
         listener.close()
     thread = threading.Thread(target=serve, daemon=True)
     thread.start()
-    worker = backend.Monitor(profiles.clean({"host": "127.0.0.1", "user": "test", "port": str(port), "mode": profiles.MODES[2]}), "wrong" if scenario == "badpassword" else "test-only-secret")
+    profile=profiles.clean({"host":"127.0.0.1","user":"test","port":str(port),"mode":profiles.MODES[2]})
+    password="wrong" if scenario=="badpassword" else "test-only-secret"
+    if scenario=='dialog-saved':
+        import subprocess,sys,vault
+        from pathlib import Path
+        from dialogs import HostDialog
+        from PySide6.QtTest import QTest
+        from PySide6.QtWidgets import QDialog
+        dialog=HostDialog(window,dict(profile,mode=profiles.MODES[0]),credentials_only=True)
+        try:
+            QTest.keyClicks(dialog.secret,'test-only-secret');dialog.check()
+            assert dialog.result()==QDialog.DialogCode.Accepted
+            profile=dialog.profile();assert profile['mode']==profiles.MODES[2]
+            vault.save_password(profile,dialog.credentials()[0]);dialog.secret.clear()
+            try:
+                code="import sys,json;from pathlib import Path;sys.path.insert(0,sys.argv[1]);import backend,vault;backend.config_path=lambda:Path(sys.argv[3]);print(vault.get_password(json.loads(sys.argv[2]))=='test-only-secret')"
+                restored=subprocess.run([sys.executable,'-c',code,str(Path(backend.__file__).parent),json.dumps(profile),str(tmp_path/'absent')],capture_output=True,text=True,timeout=15)
+                assert restored.returncode==0 and restored.stdout.strip()=='True'
+                password=vault.get_password(profile)
+            finally:vault.forget_password(profile)
+        finally:dialog.close()
+    worker=backend.Monitor(profile,password)
     received = []
     # Run synchronously in this test; direct signal connection needs no GUI event loop.
     from PySide6.QtCore import Qt
@@ -70,7 +92,7 @@ def test_password_login_unknown_host_and_stream(tmp_path, monkeypatch, scenario)
     worker.data.connect(accept_sample, Qt.ConnectionType.DirectConnection)
     worker.run()
     thread.join(timeout=3)
-    if scenario == "accept":
+    if scenario in ("accept","dialog-saved"):
         assert len(received) == 2
         assert authenticated == [("test", "test-only-secret")]
         assert "127.0.0.1" in (tmp_path / "known_hosts").read_text()

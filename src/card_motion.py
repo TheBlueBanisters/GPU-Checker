@@ -2,6 +2,7 @@
 import math
 import time
 import random
+import card_halo
 from functools import lru_cache
 from PySide6.QtCore import QPointF,QRectF,QTimer,QEvent,Qt
 from PySide6.QtGui import QColor,QPen,QPainterPath,QRadialGradient,QLinearGradient
@@ -168,8 +169,10 @@ class CardMotion:
             self.owner.installEventFilter(w)
         moving=self.state in ('busy','light','available','idle','paused') or (
             self.state in ('blocked','disconnected') and time.monotonic()-self.transition<1.6)
-        moving=moving or self.afterglow is not None or self.click_heat>0
-        interval=20 if self.state=='busy' or self.click_heat>0 else 50
+        moving=moving or self.afterglow is not None or self.click_heat>0 or card_halo.active(w)
+        interval=16 if card_halo.active(w) else 20 if self.state=='busy' or self.click_heat>0 else 50
+        self.timer.setTimerType(Qt.TimerType.PreciseTimer)
+        card_halo.sync(w)
         if self.timer.interval()!=interval: self.timer.setInterval(interval)
         if w.isVisible() and not w.window().isMinimized() and moving:
             if not self.timer.isActive():

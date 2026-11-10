@@ -6,6 +6,9 @@ from backend import Monitor
 import profiles
 import vault
 import snapshots
+import history_cache
+from card_halo import ZeroGpuTracker
+import uuid
 from availability import Tracker,result
 
 
@@ -30,6 +33,8 @@ class HostSession(QObject):
         self.sampled_at=0.
         self.retained_snapshot=False
         self.cache_error=''
+        self.zero_gpu=ZeroGpuTracker(self.profile['interval'])
+        self.history_session=uuid.uuid4().hex
         self.availability_tracker=Tracker()
         self.gpu_states={}
         self.last_gpu_states={}
@@ -48,6 +53,7 @@ class HostSession(QObject):
             self.gpu_hint=self.snapshot.get('gpu_status','available')
             self.retained_snapshot=True
             self.last_gpu_states={key:result(value,'上次成功采样状态') for key,value in cached['states'].items()}
+            self.zero_gpu.restore(self.snapshot.get('gpus',[]),time.time())
             self.message='已恢复最后一次成功采样；等待连接，当前显示历史快照'
 
 
@@ -93,6 +99,7 @@ class HostSession(QObject):
     def _launch(self):
         if not self.desired or self.running:
             return
+        self.history_session=uuid.uuid4().hex
         self.state, self.message = "连接中", "正在建立加密连接…"
         self.availability_tracker.reset()
         self.gpu_states={}
@@ -144,6 +151,7 @@ class HostSession(QObject):
         self.snapshot = data
         self.retained_snapshot=False
         self.sampled_at=time.time()
+        self.zero_gpu.observe(data.get('gpus',[]),self.sampled_at)
         self.received = time.monotonic()
         self.sample_count += 1
         self.retry_count = 0
@@ -156,6 +164,8 @@ class HostSession(QObject):
         for gpu in data["gpus"]:
             values = self.history.setdefault(gpu["uuid"], deque(maxlen=60))
             values.append(gpu.get("util"))
+        if capability=='available':
+            history_cache.record(self.profile,data,self.sampled_at,self.history_session)
         if capability in ('available','no_gpu'):
             try:
                 snapshots.save(self.profile,self.snapshot,self.history,self.sampled_at,self.last_gpu_states)
@@ -229,7 +239,9 @@ class HostSession(QObject):
                 state['historical']=True
                 state['reason']='暂停前的最后采样状态（非实时，不计入当前可用数量）'
             return state
-        return self.gpu_states.get(uuid,result('unknown','尚无完整采样'))
+        state=dict(self.gpu_states.get(uuid,result('unknown','尚无完整采样')))
+        state['idle_glow']=self.zero_gpu.eligible(uuid,time.time())
+        return state
 
     def availability_counts(self):
         if not self.fresh or self.retained_snapshot or not self.snapshot or self.gpu_hint=='unavailable':

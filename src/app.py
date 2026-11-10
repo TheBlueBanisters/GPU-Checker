@@ -1,12 +1,14 @@
 from themes import set_style
 import themes
 import ui_density
+import history_cache
 import storage
 from version import APP_VERSION
 from host_list import HostList
 from telemetry_transition import TelemetryTransition
 from status_message import StatusMessage
 from theme_transition import ThemeTransition
+from dialog_focus import DialogFocus
 import json
 from pathlib import Path
 import sys
@@ -46,6 +48,7 @@ class Window(QMainWindow):
         if hasattr(self,'telemetry_transition'): self.telemetry_transition.cancel()
         mode='night' if themes.is_day() else 'day'
         self.theme_transition.switch(QApplication.instance(),mode,STYLE)
+        if hasattr(self,'dialog_focus'):QTimer.singleShot(650,self.dialog_focus,self.dialog_focus.refresh)
         DATA.mkdir(parents=True,exist_ok=True)
         path=DATA/'ui_preferences.json'
         temporary=path.with_suffix('.tmp')
@@ -99,6 +102,7 @@ class Window(QMainWindow):
         self.profile_stamp=self.profiles_stamp()
         self.automatic_start=autostart
         central=Backdrop()
+        self.content_body=central
         shell=QWidget()
         shell.setObjectName('shell')
         set_style(shell,'QWidget#shell {background:#0b1424;border:1px solid #263a50;}')
@@ -266,7 +270,7 @@ class Window(QMainWindow):
         self.card_widget=QWidget()
         self.card_layout=QGridLayout(self.card_widget)
         self.card_layout.setAlignment(Qt.AlignmentFlag.AlignLeft|Qt.AlignmentFlag.AlignTop)
-        self.card_layout.setContentsMargins(0,0,8,18)
+        self.card_layout.setContentsMargins(10,10,10,18)
         self.card_layout.setSpacing(12)
         self.empty=label('等待加密遥测链路建立…','muted')
         self.card_layout.addWidget(self.empty,0,0)
@@ -324,6 +328,7 @@ class Window(QMainWindow):
         regions=[(self.card_scroll.viewport(),650)]
         self.telemetry_transition=TelemetryTransition(self,regions)
         self.theme_transition=ThemeTransition(self)
+        self.dialog_focus=DialogFocus(self,central)
         self.table.viewport().installEventFilter(self.telemetry_transition)
         self.details.viewport().installEventFilter(self.telemetry_transition)
         self.search.textChanged.connect(self.telemetry_transition.cancel)
@@ -341,6 +346,25 @@ class Window(QMainWindow):
         if autostart:
             QTimer.singleShot(350,self,self.autostart)
 
+    def show_settings(self):
+        from settings_view import SettingsDialog
+        from shiboken6 import isValid
+        window=getattr(self,'settings_window',None)
+        if window is not None and isValid(window) and window.isVisible():
+            window.raise_();window.activateWindow();return
+        self.settings_window=SettingsDialog(self);self.settings_window.show()
+
+    def show_history(self,host_id,gpu=None):
+        from history_view import HistoryDialog
+        from shiboken6 import isValid
+        session=self.sessions.get(host_id)
+        if not session:return
+        self.history_windows=[w for w in getattr(self,'history_windows',[]) if isValid(w)]
+        for window in self.history_windows:
+            if window.host_id==host_id and window.initial_gpu==gpu and window.isVisible():
+                window.raise_();window.activateWindow();return
+        window=HistoryDialog(self,session.profile,gpu);self.history_windows.append(window);window.show()
+
     def button(self,text,fn,primary=False):
         button=ModernButton(text,primary,ghost=text in ('导入 SSH config','粘贴 / 编辑 config','迁移配置','使用说明','编辑','移除'))
         if primary:
@@ -349,7 +373,7 @@ class Window(QMainWindow):
         return button
 
     def notify(self,title,message):
-        QMessageBox.information(self,title,message)
+        with self.dialog_focus.modal():QMessageBox.information(self,title,message)
 
     def register(self,p):
         session=self.session_factory(p,self)
@@ -375,9 +399,10 @@ class Window(QMainWindow):
         for index,p in enumerate(self.items):
             item=QListWidgetItem()
             item.setData(Qt.ItemDataRole.UserRole,p['id'])
-            item.setSizeHint(QSize(230,156))
+            item.setSizeHint(QSize(230,184))
             self.host_list.addItem(item)
             tile=HostTile(self.sessions[p['id']],index)
+            tile.historyRequested.connect(self.show_history)
             self.host_list.setItemWidget(item,tile)
             self.tiles[p['id']]=tile
             if p['id']==selected:
@@ -527,6 +552,7 @@ class Window(QMainWindow):
                 history=session.history.get(g['uuid'],())
                 if g['uuid'] not in self.cards:
                     card=GPUCard(g,history,session.gpu_availability(g['uuid']))
+                    card.historyRequested.connect(lambda gpu,sid=session.id:self.show_history(sid,gpu))
                     self.cards[g['uuid']]=card
                     self.card_layout.addWidget(card,0,len(self.cards)-1)
                     card.show()
@@ -623,17 +649,17 @@ class Window(QMainWindow):
 
     def toggle_selected(self):
         s=self.selected
-        if not s:
-            return
+        if not s:return
         if s.desired:
-            s.pause()
-            self.persist_session_preferences()
-        elif (s.profile['mode']==profiles.MODES[2] and not vault.get_password(s.profile)) or s.state=='连接异常':
-            self.edit_host(credentials_only=True)
-        else:
-            s.profile['autoconnect']=True
-            self.persist_session_preferences()
-            s.start()
+            s.pause();self.persist_session_preferences();return
+        needs_credentials=s.state in ('连接异常','待认证')
+        if s.profile['mode']==profiles.MODES[2] and not needs_credentials:
+            try:needs_credentials=not bool(vault.get_password(s.profile))
+            except Exception:needs_credentials=True
+        if needs_credentials:
+            self.edit_host(credentials_only=True);return
+        s.profile['autoconnect']=True
+        self.persist_session_preferences();s.start()
 
     def write_runtime_state(self):
         try:
@@ -782,7 +808,8 @@ class Window(QMainWindow):
         self.rebuild_list()
 
     def import_ssh(self):
-        path,_=QFileDialog.getOpenFileName(self,'导入 SSH config 或迁移 JSON',str(Path.home()/'.ssh'),'配置文件 (*);;JSON (*.json)')
+        with self.dialog_focus.modal():
+            path,_=QFileDialog.getOpenFileName(self,'导入 SSH config 或迁移 JSON',str(Path.home()/'.ssh'),'配置文件 (*);;JSON (*.json)')
         if not path:
             return
         self.import_path(path)
@@ -834,7 +861,8 @@ class Window(QMainWindow):
             self.import_path(str(path))
 
     def export_bundle(self):
-        path,_=QFileDialog.getSaveFileName(self,'导出迁移配置','GPUChecker-connections.json','JSON (*.json)')
+        with self.dialog_focus.modal():
+            path,_=QFileDialog.getSaveFileName(self,'导出迁移配置','GPUChecker-connections.json','JSON (*.json)')
         if not path:
             return
         try:
@@ -860,7 +888,8 @@ class Window(QMainWindow):
                 if not session or not session.desired or not session.worker:
                     continue
                 worker=session.worker
-                answer=QMessageBox.question(self,'核对主机指纹',f"主机：{session.profile['name']} ({host})\n\n{fp}\n\n请与管理员提供的指纹核对。信任并保存？",QMessageBox.StandardButton.Yes|QMessageBox.StandardButton.No,QMessageBox.StandardButton.No)
+                with self.dialog_focus.modal():
+                    answer=QMessageBox.question(self,'核对主机指纹',f"主机：{session.profile['name']} ({host})\n\n{fp}\n\n请与管理员提供的指纹核对。信任并保存？",QMessageBox.StandardButton.Yes|QMessageBox.StandardButton.No,QMessageBox.StandardButton.No)
                 worker.accept_key(answer==QMessageBox.StandardButton.Yes and session.desired and self.sessions.get(sid) is session)
         finally:
             self.trust_busy=False
@@ -888,7 +917,7 @@ class Window(QMainWindow):
         scale=float(self.property('uiDensity') or 1.)
         ui_density.apply(self,scale,STYLE)
         self.card_layout.setSpacing(12)
-        self.card_layout.setContentsMargins(0,0,8,18)
+        self.card_layout.setContentsMargins(10,10,10,18)
         height=max(round(308*scale),min(round(420*scale),int(self.height()*.32)))
         if self.card_scroll.height()!=height:self.card_scroll.setFixedHeight(height)
         if self.cards:
@@ -911,7 +940,7 @@ class Window(QMainWindow):
         ui_density.apply(self,scale,STYLE)
         self.side_scroll.setFixedWidth(round(282*scale))
         for index in range(self.host_list.count()):
-            self.host_list.item(index).setSizeHint(QSize(round(230*scale),round(156*scale)))
+            self.host_list.item(index).setSizeHint(QSize(round(230*scale),round(184*scale)))
         short=self.height()<850
         self.sidebar_layout.setSpacing(round((8 if short else 13)*scale))
         self.sidebar_layout.setContentsMargins(*(round(v*scale) for v in ((12 if short else 18),(14 if short else 25),(12 if short else 18),(14 if short else 19))))
@@ -989,6 +1018,13 @@ class Window(QMainWindow):
 
     def closeEvent(self,event):
         self.closing=True
+        if hasattr(self,'timer'):self.timer.stop()
+        from shiboken6 import isValid
+        settings=getattr(self,'settings_window',None)
+        if settings is not None and isValid(settings):settings.close()
+        for window in getattr(self,'history_windows',[]):
+            if isValid(window):window.close()
+        if hasattr(self,'dialog_focus'):self.dialog_focus.dispose()
         if hasattr(self,'theme_transition'):self.theme_transition.cancel()
         if hasattr(self,'telemetry_transition'): self.telemetry_transition.cancel()
         all_sessions=list(self.sessions.values())+self.retired
@@ -999,6 +1035,7 @@ class Window(QMainWindow):
             self.hide()
             event.ignore()
         else:
+            history_cache.flush(timeout=2)
             event.accept()
 
 

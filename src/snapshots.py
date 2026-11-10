@@ -6,7 +6,7 @@ import profiles
 import vault
 from availability import COLORS
 
-GPU_FIELDS=set('index uuid name util used total free temp power fan state compute_mode mig_mode recovery_action slowdown_temp remap_failure minor_number process_query_ok ecc_uncorrectable device_access'.split())
+GPU_FIELDS=set('index uuid name util mem_util gpu_zero_since gpu_zero_last used total free temp power fan state compute_mode mig_mode recovery_action slowdown_temp remap_failure minor_number process_query_ok ecc_uncorrectable device_access'.split())
 PROCESS_FIELDS=set('gpu uuid pid user uid kind memory name cwd exe start ppid instance'.split())
 MAX_BYTES=8*1024*1024
 

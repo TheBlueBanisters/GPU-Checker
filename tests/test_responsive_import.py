@@ -89,7 +89,7 @@ def test_gpu_card_spacing_stays_compact_after_count_and_width_changes(window):
             rows={}
             for card in window.cards.values():
                 rows.setdefault(card.y(),[]).append(card.geometry())
-            assert min(row[0].left() for row in rows.values())==0
+            assert min(row[0].left() for row in rows.values())==10
             for row in rows.values():
                 row.sort(key=lambda rect:rect.left())
                 assert all(b.left()-a.right()-1==12 for a,b in zip(row,row[1:]))

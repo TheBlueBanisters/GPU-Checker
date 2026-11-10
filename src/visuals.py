@@ -3,7 +3,7 @@ import math
 import time
 from card_motion import CardMotion
 from pathlib import Path
-from PySide6.QtCore import Qt,QRectF,QPointF,QVariantAnimation,QSize,QEvent,QEasingCurve
+from PySide6.QtCore import Qt,QRectF,QPointF,QVariantAnimation,QSize,QEvent,QEasingCurve,Signal
 from PySide6.QtGui import QColor, QPainter, QPainterPath, QPen, QLinearGradient, QRadialGradient,QFont
 from PySide6.QtWidgets import QWidget, QFrame, QLabel, QVBoxLayout, QHBoxLayout, QProgressBar,QPushButton,QSizePolicy,QGraphicsDropShadowEffect
 from availability import result as availability_result
@@ -134,6 +134,7 @@ class MechPanel(QFrame):
         self.update()
 
     def eventFilter(self,watched,event):
+        if isinstance(watched,QPushButton):return super().eventFilter(watched,event)
         if getattr(self,'feedback_enabled',False):
             if event.type()==QEvent.Type.MouseMove:
                 self.feedback_point=QPointF(watched.mapTo(self,event.position().toPoint()))
@@ -177,6 +178,8 @@ class MechPanel(QFrame):
         super().hideEvent(event)
 
     def panel_path(self,rect):
+        if self.property('squarePanel'):
+            path=QPainterPath();path.addRect(rect);return path
         return notch_path(rect,10)
 
     def paint_background(self,p,rect):
@@ -256,6 +259,7 @@ class MechPanel(QFrame):
             p.setBrush(Qt.BrushStyle.NoBrush);p.setPen(QPen(ink,6));p.drawPath(border)
             ink=QColor(themed(state_color));ink.setAlpha(255)
             p.setPen(QPen(ink,2.1));p.drawPath(border)
+
 
 
 
@@ -400,9 +404,15 @@ class ModernButton(QPushButton):
             line(5,3,5,13);line(11,3,11,13)
         elif '连接' in text or '恢复' in text:
             path=QPainterPath();path.moveTo(4,2);path.lineTo(13,8);path.lineTo(4,14);path.closeSubpath();p.drawPath(path)
+        elif '刷新' in text or '复位' in text:
+            p.drawArc(QRectF(2.5,2.5,11,11),40*16,285*16);line(13,2,13,6);line(9,6,13,6)
+        elif '缓存' in text:
+            p.drawRoundedRect(QRectF(2,2,12,12),2,2);line(5,5,11,5);line(5,8,11,8);line(5,11,8,11)
+        elif '保存' in text:
+            p.drawRect(QRectF(2,2,12,12));p.drawRect(QRectF(5,2,6,4));p.drawRect(QRectF(5,9,6,5))
         elif '添加' in text:
             line(8,2,8,14);line(2,8,14,8)
-        elif '移除' in text:
+        elif '移除' in text or '清除' in text:
             line(3,4,13,4);line(6,1,10,1);p.drawRoundedRect(QRectF(4,4,8,10),1,1);line(7,7,7,11);line(10,7,10,11)
         elif '导入' in text or '迁移' in text:
             line(8,1,8,10);line(4,7,8,11);line(8,11,12,7);line(2,11,2,14);line(2,14,14,14);line(14,14,14,11)
@@ -491,7 +501,36 @@ class Sparkline(QWidget):
             p.drawEllipse(last[0]-2,last[1]-2,4,4)
 
 
+class HistoryLink(QPushButton):
+    """A quiet footer action with a chart glyph, aligned to the same baseline."""
+    def __init__(self):
+        super().__init__('历史');self.setFixedSize(64,28)
+        self.setCursor(Qt.CursorShape.PointingHandCursor);self.setAccessibleName('查看监控历史')
+        set_style(self,'font-size:12px;padding:0px;border:0;background:transparent;color:#7498b1')
+    def paintEvent(self,event):
+        p=QPainter(self);p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        color=themed('#75e6e1' if self.underMouse() or self.hasFocus() else '#7498b1')
+        if self.underMouse() or self.isDown():
+            fill=themed('#205568');fill.setAlpha(110);p.fillPath(notch_path(QRectF(0,0,self.width(),self.height()),5),fill)
+        if self.isDown():p.translate(0,1)
+        middle=self.height()/2;p.setPen(QPen(color,1.1))
+        path=QPainterPath(QPointF(5,middle+4));path.lineTo(9,middle);path.lineTo(12,middle+2);path.lineTo(17,middle-5);p.drawPath(path)
+        p.setFont(self.font());p.drawText(QRectF(23,0,self.width()-33,self.height()),Qt.AlignmentFlag.AlignVCenter,'历史')
+        p.drawLine(QPointF(self.width()-9,middle-3),QPointF(self.width()-6,middle));p.drawLine(QPointF(self.width()-6,middle),QPointF(self.width()-9,middle+3))
+
+
+def history_button():return HistoryLink()
+
+
+def history_footer():
+    footer=QFrame();footer.setObjectName('historyFooter');footer.setFixedHeight(32)
+    set_style(footer,'QFrame#historyFooter {border:0;border-top:1px solid #2b4b60;background:transparent;}')
+    row=QHBoxLayout(footer);row.setContentsMargins(0,4,0,0);row.setSpacing(5)
+    return footer,row
+
+
 class GPUCard(MechPanel):
+    historyRequested=Signal(str)
     def panel_path(self,rect):
         path=notch_path(rect,10)
         if not hasattr(self,'motion') or self.motion.state!='paused': return path
@@ -522,6 +561,8 @@ class GPUCard(MechPanel):
 
     def hideEvent(self,event):
         self.motion.timer.stop()
+        overlay=getattr(self,'halo_overlay',None)
+        if overlay is not None:overlay.hide()
         super().hideEvent(event)
 
     def eventFilter(self,watched,event):
@@ -564,8 +605,14 @@ class GPUCard(MechPanel):
         self.bar=QProgressBar()
         self.bar.setTextVisible(False)
         self.thermal=label("","muted")
-        for widget in (self.name,self.metric_label,self.spark,self.memory,self.bar,self.thermal):
+        for widget in (self.name,self.metric_label,self.spark,self.memory,self.bar):
             box.addWidget(widget)
+        footer,bottom=history_footer()
+        self.thermal.setMinimumWidth(0);self.thermal.setSizePolicy(QSizePolicy.Policy.Ignored,QSizePolicy.Policy.Preferred)
+        bottom.addWidget(self.thermal,1)
+        self.history_button=history_button()
+        self.history_button.clicked.connect(lambda:self.historyRequested.emit(self.gpu_uuid))
+        bottom.addWidget(self.history_button);box.addWidget(footer)
         self.update_data(gpu,history,availability)
         self.enable_feedback()
 
@@ -574,6 +621,7 @@ class GPUCard(MechPanel):
         self.motion.boost()
 
     def update_data(self,g,history,availability=None):
+        self.gpu_uuid=g['uuid']
         self.motion.seed=sum((i+1)*ord(c) for i,c in enumerate(g['uuid']))%997
         self.title.setText(f"GPU {g['index'] if g['index'] is not None else '—'}")
         self.title.setToolTip(g["uuid"])
@@ -591,6 +639,7 @@ class GPUCard(MechPanel):
         self.set_availability(availability or availability_result('unknown','等待完整的可用性判断'))
 
     def set_availability(self,state):
+        self.setProperty('idleHaloEligible',bool(state.get('idle_glow')))
         visual=state.get('visual',state['status'])
         self.motion.set_state(visual)
         color='#78909f' if visual in ('blocked','disconnected','paused') else state['color']
@@ -628,6 +677,7 @@ class CapsuleLabel(QLabel):
 
 
 class HostTile(MechPanel):
+    historyRequested=Signal(str)
     def __init__(self,session,tone_index=0):
         super().__init__()
         self.setObjectName("hostTile")
@@ -657,6 +707,12 @@ class HostTile(MechPanel):
         self.bar=QProgressBar()
         self.bar.setTextVisible(False)
         box.addWidget(self.bar)
+        footer,bottom=history_footer()
+        caption=label('显存趋势','eyebrow');set_style(caption,'font-size:11px;color:#5d9aaf')
+        bottom.addWidget(caption,1)
+        self.history_button=history_button();self.history_button.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.history_button.clicked.connect(lambda:self.historyRequested.emit(session.id))
+        bottom.addWidget(self.history_button);box.addWidget(footer)
         for text in (self.name,self.endpoint,self.summary):
             text.setMinimumWidth(0)
             text.setSizePolicy(QSizePolicy.Policy.Ignored,QSizePolicy.Policy.Preferred)

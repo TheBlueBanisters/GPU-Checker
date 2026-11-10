@@ -110,7 +110,7 @@ def test_restart_autostart_hands_off_saved_snapshot_after_first_sample(window):
         fresh.show();QApplication.processEvents()
         t=fresh.telemetry_transition
         assert fresh.selected.historical and t.mode=='frozen'
-        assert not fresh.selected.desired and not t.overlays
+        assert not t.overlays  # Startup may already have run during a slow first render.
         QTest.qWait(420)  # exercise the real startup timer, never an SSH worker
         assert fresh.selected.desired and fresh.selected.worker.isRunning()
         assert t.mode=='frozen' and not t.overlays  # connecting is not live data

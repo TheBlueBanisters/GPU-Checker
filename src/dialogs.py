@@ -1,10 +1,11 @@
-from themes import set_style
+from themes import set_style,color as themed
 from pathlib import Path
-from PySide6.QtCore import Qt
+from PySide6.QtGui import QPainter,QPen
+from PySide6.QtCore import Qt,QRectF
 from PySide6.QtWidgets import (QDialog,QVBoxLayout,QHBoxLayout,QFormLayout,QLineEdit,QComboBox,
-    QSpinBox,QCheckBox,QPushButton,QDialogButtonBox,QFileDialog,QMessageBox,QPlainTextEdit,QDoubleSpinBox,QScrollArea,QLayout,QApplication)
+    QSpinBox,QCheckBox,QPushButton,QDialogButtonBox,QFileDialog,QMessageBox,QPlainTextEdit,QDoubleSpinBox,QScrollArea,QLayout,QApplication,QFrame)
 from backend import BASE, validate, config_path
-from visuals import label,MechPanel
+from visuals import label,MechPanel,notch_path
 from window_chrome import TitleBar,install_handles,layout_handles
 import profiles
 import vault
@@ -15,10 +16,32 @@ class MechDialog(QDialog):
     def __init__(self,*args,**kwargs):
         super().__init__(*args,**kwargs)
         self.setWindowFlags(Qt.WindowType.Dialog|Qt.WindowType.FramelessWindowHint|Qt.WindowType.WindowSystemMenuHint|Qt.WindowType.WindowCloseButtonHint)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        self.setObjectName('mechDialog')
+        set_style(self,'QDialog#mechDialog {background:transparent;border:0;}')
         self.resize_handles=[]
+
+    def paintEvent(self,event):
+        painter=QPainter(self);painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        painter.setBrush(themed('#101b2d'));painter.setPen(QPen(themed('#65bde9'),1.5))
+        painter.drawPath(notch_path(QRectF(1.25,1.25,self.width()-2.5,self.height()-2.5),16))
+
+    def focus_owner(self):
+        owner=self.parentWidget()
+        while owner is not None:
+            if hasattr(owner,'dialog_focus'):return owner
+            owner=owner.parentWidget()
+        return None
+
+    def hideEvent(self,event):
+        owner=self.focus_owner()
+        if owner is not None:owner.dialog_focus.remove(id(self))
+        super().hideEvent(event)
 
     def showEvent(self,event):
         super().showEvent(event)
+        owner=self.focus_owner()
+        if owner is not None:owner.dialog_focus.add(self)
         screen=self.screen() or QApplication.primaryScreen()
         if screen:
             available=screen.availableGeometry().adjusted(16,16,-16,-16)
@@ -36,18 +59,25 @@ class MechDialog(QDialog):
             layout_handles(self)
 
 
-def dialog_layout(dialog):
+def dialog_layout(dialog,scroll_gutter=False):
     root=QVBoxLayout(dialog)
-    root.setContentsMargins(1,1,1,1)
+    root.setContentsMargins(10,10,10,10)
     root.setSpacing(0)
     root.addWidget(TitleBar(dialog,dialog.windowTitle(),compact=True))
     body=MechPanel()
-    body.setObjectName('glass')
+    body.setObjectName('glass');body.setProperty('squarePanel',True)
     scroll=QScrollArea()
     scroll.setWidgetResizable(True)
     scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
     scroll.setWidget(body)
-    root.addWidget(scroll,1)
+    if scroll_gutter:
+        # Reserve independent gaps on both sides of the bar, outside the body frame.
+        scroll.setViewportMargins(0,0,12,0)
+        set_style(scroll,'QScrollBar:vertical {width:10px;background:transparent;border:0;margin:5px 2px;} QScrollBar::handle:vertical {background:#3c6c80;border-radius:3px;min-height:32px;} QScrollBar::handle:vertical:hover {background:#65bde9;} QScrollBar::add-line:vertical,QScrollBar::sub-line:vertical {height:0;} QScrollBar::add-page:vertical,QScrollBar::sub-page:vertical {background:transparent;}')
+        surround=QFrame();surround.setObjectName('historyScrollSurround')
+        lane=QVBoxLayout(surround);lane.setContentsMargins(0,8,14,8);lane.setSpacing(0);lane.addWidget(scroll)
+        root.addWidget(surround,1);dialog.history_scroll=scroll
+    else:root.addWidget(scroll,1)
     box=QVBoxLayout(body)
     box.setSizeConstraint(QLayout.SizeConstraint.SetMinimumSize)
     return box
@@ -93,7 +123,12 @@ class HostDialog(MechDialog):
         for title,widget in (("显示名称",self.name),("主机",self.host),("用户名",self.user),("端口",self.port),("认证方式",self.mode)):
             form.addRow(title,widget)
         form.addRow("私钥文件",keyrow)
-        form.addRow("密码 / 私钥口令",self.secret)
+        self.secret_label=label('服务器密码')
+        secretrow=QHBoxLayout();secretrow.addWidget(self.secret,1)
+        self.password_button=QPushButton('使用密码')
+        self.password_button.clicked.connect(self.use_password)
+        secretrow.addWidget(self.password_button)
+        form.addRow(self.secret_label,secretrow)
         form.addRow("采样间隔",self.interval)
         box.addLayout(form)
         self.auto=QCheckBox("启动程序时自动监控此主机")
@@ -115,18 +150,36 @@ class HostDialog(MechDialog):
         buttons.accepted.connect(self.check)
         buttons.rejected.connect(self.reject)
         box.addWidget(buttons)
+        self._preserve_secret=False
         self.mode.currentIndexChanged.connect(self.mode_changed)
+        self.secret.textEdited.connect(self.secret_edited)
+        for field in (self.host,self.user,self.port):field.textChanged.connect(self.update_secret_hint)
         self.mode_changed()
 
+    def use_password(self):
+        self.mode.setCurrentIndex(2);self.secret.setFocus()
+
+    def secret_edited(self,text):
+        if text and self.mode.currentIndex()==0:
+            # textEdited includes typing, paste and input methods. Do not erase
+            # the first edit when currentIndexChanged refreshes the form.
+            self._preserve_secret=True
+            try:self.mode.setCurrentIndex(2)
+            finally:self._preserve_secret=False
+
     def mode_changed(self):
-        self.secret.clear()
-        self.secret.setEnabled(self.mode.currentIndex()!=0)
-        self.remember.setEnabled(self.mode.currentIndex()==2)
+        if not self._preserve_secret:self.secret.clear()
+        self.secret.setEnabled(True)
+        password=self.mode.currentIndex()==2
+        self.remember.setEnabled(password)
+        self.password_button.setVisible(not password)
+        self.secret_label.setText('私钥口令' if self.mode.currentIndex()==1 else '服务器密码')
+        self.secret.setAccessibleName(self.secret_label.text())
         self.update_secret_hint()
 
     def update_secret_hint(self):
         if self.mode.currentIndex()==0:
-            hint='由 OpenSSH / Agent 负责认证'
+            hint='免密可留空；输入服务器密码将切换为密码登录'
         elif self.mode.currentIndex()==1:
             hint='本次会话的私钥口令（可选）'
         else:
@@ -134,7 +187,7 @@ class HostDialog(MechDialog):
                 stored=bool(self.host.text().strip() and vault.get_password(self.profile()))
             except Exception:
                 stored=False
-            hint='已记住密码；留空可继续使用' if stored else '保存到 Windows 凭据管理器' if self.remember.isChecked() else '仅供当前连接使用'
+            hint=('已记住密码；留空可继续使用' if stored else '输入服务器密码，保存到 Windows 凭据管理器') if self.remember.isChecked() else ('仅本次连接使用；保存后将忘记原密码' if stored else '仅供当前连接使用')
         self.secret.setPlaceholderText(hint)
 
     def browse(self):
@@ -156,10 +209,12 @@ class HostDialog(MechDialog):
             autoconnect=self.auto.isChecked(),retry=self.retry.isChecked()))
 
     def credentials(self):
+        if self.mode.currentIndex()==0:return ("","")
         return (self.secret.text(),"") if self.mode.currentIndex()==2 else ("",self.secret.text())
 
     def check(self):
         try:
+            self.secret_edited(self.secret.text())
             validate(self.profile())
             if self.mode.currentIndex()==2 and not self.secret.text() and not vault.get_password(self.profile()):
                 raise ValueError('请输入服务器密码；此主机尚无已保存密码')

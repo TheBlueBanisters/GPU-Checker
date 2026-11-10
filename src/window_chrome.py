@@ -1,7 +1,7 @@
 from themes import set_style, color as themed, is_day
 """App-drawn title bar; Qt delegates movement and resizing to the OS."""
 from PySide6.QtCore import Qt,QRectF,QPointF,QSize
-from PySide6.QtGui import QColor,QPainter,QPen,QLinearGradient
+from PySide6.QtGui import QColor,QPainter,QPen,QLinearGradient,QPainterPath
 from PySide6.QtWidgets import QWidget,QFrame,QLabel,QHBoxLayout,QAbstractButton
 from visuals import notch_path
 from version import APP_VERSION
@@ -13,7 +13,7 @@ class WindowControl(QAbstractButton):
         self.kind,self.owner=kind,window
         self.setFixedSize(38,30)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.setAccessibleName({'min':'最小化','max':'最大化或还原','close':'关闭窗口','theme':'切换日间模式'}[kind])
+        self.setAccessibleName({'min':'最小化','max':'最大化或还原','close':'关闭窗口','theme':'切换日间模式','settings':'设置'}[kind])
         self.setToolTip(self.accessibleName())
         self.clicked.connect(self.activate)
         if kind=='theme': self.sync_theme_label()
@@ -23,7 +23,8 @@ class WindowControl(QAbstractButton):
         self.setToolTip(self.accessibleName())
 
     def activate(self):
-        if self.kind=='theme': self.owner.toggle_theme()
+        if self.kind=='settings': self.owner.show_settings()
+        elif self.kind=='theme': self.owner.toggle_theme()
         elif self.kind=='min': self.owner.showMinimized()
         elif self.kind=='max': self.owner.showNormal() if self.owner.isMaximized() else self.owner.showMaximized()
         else: self.owner.close()
@@ -34,15 +35,28 @@ class WindowControl(QAbstractButton):
     def paintEvent(self,event):
         p=QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
-        if self.underMouse() or self.isDown():
+        compact_close=self.kind=='close' and self.owner.inherits('QDialog')
+        if compact_close:
+            p.setBrush(themed('#aa3f53' if self.underMouse() or self.isDown() else '#122638'))
+            p.setPen(QPen(themed('#65bde9' if self.underMouse() else '#31576b'),1))
+            p.drawPath(notch_path(QRectF(.75,.75,self.width()-1.5,self.height()-1.5),5))
+        elif self.underMouse() or self.isDown():
             p.setBrush(themed('#aa3f53' if self.kind=='close' else '#22374d'))
             p.setPen(Qt.PenStyle.NoPen)
             p.drawPath(notch_path(QRectF(1,1,self.width()-2,self.height()-2),4))
         p.setPen(QPen(themed('#b7e1eb' if self.underMouse() else '#83a5bb'),1.6))
         x,y=self.width()/2,self.height()/2
-        if self.kind=='theme':
+        if self.kind=='settings':
+            import math
+            gear=QPainterPath()
+            for i in range(32):
+                a=(i-.5)*math.pi/16;r=(5.,7.,7.,5.)[i%4]
+                point=QPointF(x+r*math.cos(a),y+r*math.sin(a))
+                if i==0:gear.moveTo(point)
+                else:gear.lineTo(point)
+            gear.closeSubpath();p.drawPath(gear);p.drawEllipse(QRectF(x-2.2,y-2.2,4.4,4.4))
+        elif self.kind=='theme':
             if is_day():
-                from PySide6.QtGui import QPainterPath
                 moon=QPainterPath();moon.addEllipse(QRectF(x-6,y-6,12,12))
                 cut=QPainterPath();cut.addEllipse(QRectF(x-1,y-8,11,11))
                 p.fillPath(moon.subtracted(cut),p.pen().color())
@@ -91,13 +105,15 @@ class TitleBar(QFrame):
             row.addWidget(label)
             label.setVisible(not compact)
         if not compact:
+            self.settings_button=WindowControl('settings',window)
+            row.addWidget(self.settings_button)
             self.theme_button=WindowControl('theme',window)
             row.addWidget(self.theme_button)
         row.addSpacing(8)
         controls=QFrame()
         controls.setObjectName('windowControls')
         controls.setFixedHeight(34)
-        set_style(controls,'QFrame#windowControls {background:#122638;border:1px solid #31576b;border-radius:1px;}')
+        set_style(controls,'QFrame#windowControls {background:transparent;border:0;}' if compact else 'QFrame#windowControls {background:#122638;border:1px solid #31576b;border-radius:1px;}')
         group=QHBoxLayout(controls)
         group.setContentsMargins(2,1,2,1)
         group.setSpacing(2)
@@ -115,7 +131,7 @@ class TitleBar(QFrame):
         gradient=QLinearGradient(0,0,400,0)
         gradient.setColorAt(0,themed(89,221,217,150))
         gradient.setColorAt(1,themed(89,221,217,0))
-        p.fillRect(0,0,400,1,gradient)
+        if not self.compact:p.fillRect(0,0,400,1,gradient)
 
     def mousePressEvent(self,event):
         if event.button()==Qt.MouseButton.LeftButton and self.owner.windowHandle():
