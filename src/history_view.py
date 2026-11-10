@@ -20,21 +20,31 @@ class HistoryChart(QWidget):
         super().__init__(parent);self.indices=indices;self.payload=None;self.hover=None;self.drag_origin=None;self.drag_range=None
         self.setMinimumHeight(155);self.setMinimumWidth(360);self.setMouseTracking(True)
 
+    def plot_rect(self):
+        return QRectF(48,16,max(1,self.width()-65),max(1,self.height()-48))
+
+    def cursor_time(self):
+        plot=self.plot_rect()
+        if self.hover is None or not self.payload or not plot.contains(self.hover):return None
+        return self.payload['start']+(self.hover.x()-plot.left())/plot.width()*max(1,self.payload['end']-self.payload['start'])
+
+    def update_readout(self):
+        stamp=self.cursor_time()
+        if stamp is None or not self.payload['rows']:self.readout.emit('');return
+        row=min(self.payload['rows'],key=lambda r:abs(r['t']-stamp))
+        names=('显存占用量','显存利用率')
+        parts=[names[i]+' '+(f"{row['values'][i]:.1f}"+(' GiB' if i==0 else '%') if row['values'][i] is not None else '—') for i in self.indices]
+        self.readout.emit('最近采样 '+time.strftime('%m-%d %H:%M:%S',time.localtime(row['t']))+'   ·   '+'   /   '.join(parts))
+
     def mouseMoveEvent(self,event):
+        self.hover=event.position()
         if self.drag_origin is not None and self.payload:
             span=self.drag_range[1]-self.drag_range[0]
             delta=-(event.position().x()-self.drag_origin)/max(1,self.width()-65)*span
-            self.change_range(self.drag_range[0]+delta,span);event.accept();return
-        self.hover=event.position();self.update()
-        if self.payload and self.payload['rows']:
-            span=max(1,self.payload['end']-self.payload['start'])
-            stamp=self.payload['start']+max(0,min(1,(self.hover.x()-48)/max(1,self.width()-65)))*span
-            row=min(self.payload['rows'],key=lambda r:abs(r['t']-stamp))
-            names=('显存占用量','显存利用率')
-            parts=[names[i]+' '+(f"{row['values'][i]:.1f}"+(' GiB' if i==0 else '%') if row['values'][i] is not None else '—') for i in self.indices]
-            self.readout.emit(time.strftime('%m-%d %H:%M:%S',time.localtime(row['t']))+'   ·   '+'   /   '.join(parts))
+            self.change_range(self.drag_range[0]+delta,span);event.accept()
+        self.update_readout();self.update()
     def leaveEvent(self,event):self.hover=None;self.readout.emit('');self.update()
-    def set_data(self,data):self.payload=data;self.update()
+    def set_data(self,data):self.payload=data;self.update_readout();self.update()
 
     def change_range(self,start,span):
         bounds=self.payload.get('bounds',(self.payload['start'],self.payload['end']))
@@ -59,12 +69,13 @@ class HistoryChart(QWidget):
     def mouseDoubleClickEvent(self,event):
         self.drag_origin=None;self.drag_range=None;self.unsetCursor();self.resetRequested.emit();event.accept()
     def set_range(self,span):
-        if self.payload:self.payload=dict(self.payload,start=span[0],end=span[1]);self.update()
+        if self.payload:
+            self.payload=dict(self.payload,start=span[0],end=span[1]);self.update_readout();self.update()
 
     def paintEvent(self,event):
         p=QPainter(self);p.setRenderHint(QPainter.RenderHint.Antialiasing)
         p.fillRect(self.rect(),themed('#0b192a'))
-        plot=QRectF(48,16,max(1,self.width()-65),max(1,self.height()-48))
+        plot=self.plot_rect()
         font=QFont(self.font());font.setPixelSize(11);p.setFont(font)
         data=self.payload;rows=data['rows'] if data else []
         top=100. if 0 not in self.indices else max(1.,max((r['max'][0] or 0 for r in rows),default=1)*1.12)
@@ -92,14 +103,23 @@ class HistoryChart(QWidget):
                 p.drawEllipse(pos,1.2,1.2);previous=row
             p.drawPath(path)
         if self.hover and plot.contains(self.hover):
-            stamp=data['start']+(self.hover.x()-plot.left())/plot.width()*span
-            nearest=min(rows,key=lambda r:abs(r['t']-stamp));px=point(nearest,0).x()
+            px=self.hover.x()
             p.setPen(QPen(themed('#7498b1'),1,Qt.PenStyle.DashLine));p.drawLine(QPointF(px,plot.top()),QPointF(px,plot.bottom()))
         p.restore();p.setPen(themed('#7498b1'))
         for tick in range(3):
             stamp=data['start']+span*tick/2;text=time.strftime('%m-%d %H:%M',time.localtime(stamp))
             left=max(0,min(self.width()-92,plot.left()+plot.width()*tick/2-46))
             p.drawText(QRectF(left,plot.bottom()+7,92,18),Qt.AlignmentFlag.AlignCenter,text)
+        stamp=self.cursor_time()
+        if stamp is not None:
+            text=time.strftime('%m-%d %H:%M:%S',time.localtime(stamp))
+            width=p.fontMetrics().horizontalAdvance(text)+16
+            left=max(2.,min(self.width()-width-2.,self.hover.x()-width/2))
+            tag=QRectF(left,plot.bottom()+3,width,25)
+            p.setPen(QPen(themed('#65bde9'),1));p.setBrush(themed('#102b39'))
+            p.drawRoundedRect(tag,3,3)
+            p.setPen(themed('#b7e1eb'));p.drawText(tag,Qt.AlignmentFlag.AlignCenter,text)
+
 
 
 

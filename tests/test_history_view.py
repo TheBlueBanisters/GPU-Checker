@@ -144,3 +144,35 @@ def test_history_scrollbar_has_gaps_to_body_and_outer_frame(window):
     assert dialog.width()-bar_right>=16
     assert bar.width()<=12
     dialog.close()
+
+def test_hover_time_tracks_cursor_in_gaps_and_updates_after_zoom_and_pan(window):
+    from PySide6.QtCore import QEvent,QPointF
+    from PySide6.QtGui import QMouseEvent
+    from history_view import HistoryChart
+    chart=HistoryChart((0,));chart.resize(600,220);chart.show()
+    start=1_800_000_000.
+    def row(offset):return {'t':start+offset,'values':[2.,0.],'min':[2.,0.],'max':[2.,0.],'segment':[0,0]}
+    chart.set_data({'start':start,'end':start+100,'bounds':(start,start+100),'rows':[row(0),row(100)]})
+    QApplication.processEvents();baseline=chart.grab().toImage()
+    messages=[];chart.readout.connect(messages.append)
+    def move(ratio):
+        plot=chart.plot_rect();point=QPointF(plot.left()+ratio*plot.width(),plot.center().y())
+        QApplication.sendEvent(chart,QMouseEvent(QEvent.Type.MouseMove,point,point,Qt.MouseButton.NoButton,Qt.MouseButton.NoButton,Qt.KeyboardModifier.NoModifier))
+    try:
+        for ratio in (.001,.5,.999):
+            move(ratio)
+            assert abs(chart.cursor_time()-(start+ratio*100))<.001
+            assert chart.grab().toImage()!=baseline
+        move(.5);assert chart.cursor_time()==start+50  # Do not snap across a sparse/missing interval.
+        assert messages[-1].startswith('最近采样 ')
+        chart.set_range((start+20,start+40));assert chart.cursor_time()==start+30
+        chart.rangeChanged.connect(chart.set_range)
+        plot=chart.plot_rect();point=QPointF(plot.center())
+        QTest.mousePress(chart,Qt.MouseButton.LeftButton,pos=point.toPoint())
+        move(.7)
+        assert chart.hover.x()>point.x()
+        expected=chart.payload['start']+.7*(chart.payload['end']-chart.payload['start'])
+        assert abs(chart.cursor_time()-expected)<.001
+        QTest.mouseRelease(chart,Qt.MouseButton.LeftButton,pos=chart.hover.toPoint())
+        QApplication.sendEvent(chart,QEvent(QEvent.Type.Leave));assert chart.cursor_time() is None and messages[-1]==''
+    finally:chart.close()
