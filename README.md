@@ -4,9 +4,9 @@ Windows 多主机 NVIDIA GPU 监控工具。通过 SSH 实时查看显卡、用�
 
 ## 下载与使用
 
-到 [Releases](https://github.com/TheBlueBanisters/GPU-Checker/releases/latest) 下载 Windows x64 ZIP，完整解压后运行 `GPUChecker.exe`，无需安装 Python。目录版需要保留同目录的 `_internal` 文件夹。
+到 [Releases](https://github.com/TheBlueBanisters/GPU-Checker/releases) 下载 Windows x64 ZIP，完整解压后运行 `GPUChecker.exe`，无需安装 Python。目录版需要保留同目录的 `_internal` 文件夹。
 
-**Windows 智能应用控制**：现有旧版 EXE 未签名，可能因“无法验证发布者”被拦截。仓库已加入正式发行签名检查，但目前尚无可信发布者证书，不能保证旧版或未签名测试包通过智能应用控制。SHA-256 校验不等于发布者签名。请参阅 [微软签名要求](https://learn.microsoft.com/en-us/windows/apps/develop/smart-app-control/code-signing-for-smart-app-control)。
+**Windows 智能应用控制**：当前预发布测试版和旧版 EXE 均未签名，可能因“无法验证发布者”被拦截。仓库已加入正式发行签名检查，但目前尚无可信发布者证书，不能保证这些程序通过智能应用控制。SHA-256 校验不等于发布者签名。请参阅 [微软签名要求](https://learn.microsoft.com/en-us/windows/apps/develop/smart-app-control/code-signing-for-smart-app-control)。
 
 1. 添加主机，或导入／粘贴 SSH config。
 2. 需要输入服务器密码的主机，按下方“密码登录与记住密码”设置；已配置免密的主机可使用 OpenSSH 或私钥。
