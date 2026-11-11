@@ -10,8 +10,10 @@ from sound_feedback import play_soft_burst
 
 
 class ClickBurst(QWidget):
-    def __init__(self,card):
+    def __init__(self,card,origin=None):
         # Capture before attaching the overlay, including labels at native DPI.
+        # Reassembly reuses this raster: transient click waves must never be baked in.
+        card.clear_ripples()
         frame=card.grab()
         super().__init__(card)
         self.frame=frame
@@ -31,7 +33,9 @@ class ClickBurst(QWidget):
         self.animation.valueChanged.connect(self.advance)
         self.animation.finished.connect(self.finish)
         rng=random.Random(self.seed)
-        self.origin=QPointF(self.width()*rng.uniform(.42,.58),self.height()*rng.uniform(.36,.48))
+        point=QPointF(origin) if origin is not None else QPointF(self.width()/2,self.height()/2)
+        self.origin=QPointF(max(0.,min(self.width()-1.,point.x())),
+                            max(0.,min(self.height()-1.,point.y())))
         # Sample the panel into sub-pixel grains, not polygonal image fragments.
         image=frame.toImage();ratio=frame.devicePixelRatio()
         spacing=max(5.,math.sqrt(self.width()*self.height()/1400))
@@ -67,6 +71,7 @@ class ClickBurst(QWidget):
         if self.done:return
         self.done=True;self.animation.stop()
         card=self.parentWidget()
+        card.clear_ripples()
         if card.motion.burst is self:card.motion.burst=None
         card.removeEventFilter(self)
         self.hide();self.frame=QPixmap();self.deleteLater();card.update()

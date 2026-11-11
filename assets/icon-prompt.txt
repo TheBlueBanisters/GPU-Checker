@@ -1,2 +1,3 @@
-Built-in image_gen; logo-brand.
-Create one polished minimalist Windows application icon for a GPU monitoring utility. A bold simple white microchip outline containing a single clear ascending live telemetry pulse, on a rounded-square deep teal tile with a restrained teal-to-blue gradient. Flat geometric design, excellent silhouette at 32 pixels, generous padding, no lettering, no numbers, no watermark, no mockup, no extra objects, centered square composition. Transparent background outside the rounded square.
+Built-in image_gen edit, 2026-11-11.
+Remove only the exterior dark background from approved B2. Preserve titanium octagonal housing, four blades, cyan core, amber lamp and opaque internal cavities. Genuine alpha transparency, clean anti-aliased contour, no external shadow or black tile. Center the housing with balanced transparent margins.
+Resource framing: alpha bounds centered in 1024 square, longest extent 964 px; source cutout preserved.

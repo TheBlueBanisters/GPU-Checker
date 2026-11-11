@@ -3,7 +3,7 @@ import math
 import time
 from card_motion import CardMotion
 from pathlib import Path
-from PySide6.QtCore import Qt,QRectF,QPointF,QVariantAnimation,QSize,QEvent,QEasingCurve,Signal
+from PySide6.QtCore import Qt,QRectF,QPointF,QPoint,QVariantAnimation,QSize,QEvent,QEasingCurve,Signal
 from PySide6.QtGui import QColor, QPainter, QPainterPath, QPen, QLinearGradient, QRadialGradient,QFont
 from PySide6.QtWidgets import QWidget, QFrame, QLabel, QVBoxLayout, QHBoxLayout, QProgressBar,QPushButton,QSizePolicy,QGraphicsDropShadowEffect
 from availability import result as availability_result
@@ -141,7 +141,7 @@ class MechPanel(QFrame):
                 self._hover_to(1.)
                 self.update()
             elif event.type() in (QEvent.Type.MouseButtonPress,QEvent.Type.MouseButtonDblClick) and event.button()==Qt.MouseButton.LeftButton:
-                self.pulse_at(watched.mapTo(self,event.position().toPoint()))
+                self.pulse_at(QPointF(watched.mapTo(self,QPoint()))+event.position())
                 return True
         return super().eventFilter(watched,event)
 
@@ -617,8 +617,9 @@ class GPUCard(MechPanel):
         self.enable_feedback()
 
     def pulse_at(self,point):
+        if self.motion.burst is not None:return
         super().pulse_at(point)
-        self.motion.boost()
+        self.motion.boost(point)
 
     def update_data(self,g,history,availability=None):
         self.gpu_uuid=g['uuid']

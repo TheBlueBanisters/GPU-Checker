@@ -1,0 +1,13 @@
+export type Status='idle'|'available'|'light'|'busy'|'blocked'|'observing';
+export type Host={id:string;name:string;host:string;user:string;port:number;mode:'password'|'key';interval:number;autoconnect:boolean;retry:boolean;keyId?:string;credentialReady?:boolean};
+export type GPU={uuid:string;index:number|null;name:string;util:number|null;mem_util:number|null;used:number|null;free:number|null;total:number|null;temp:number|null;power:number|null;state?:string;compute_mode?:string;mig_mode?:string;process_query_ok?:boolean;device_access?:boolean;ecc_uncorrectable?:number;recovery_action?:string;remap_failure?:string;slowdown_temp?:number;gpu_zero_since?:number;gpu_zero_last?:number};
+export type Process={uuid:string;gpu:number|null;pid:string;name:string;kind:string;memory:number|null;user:string;cwd:string;ppid?:string;exe?:string;uid?:number};
+export type Sample={gpus:GPU[];processes:Process[];timestamp:number;receivedAt:number;driver:string;cuda:string;gpu_status:'available'|'no_gpu'|'unavailable';notice?:string;error?:string};
+export type Runtime={status:string;message:string;snapshot?:Sample;fresh:boolean};
+export type KeyInfo={id:string;name:string;algorithm:string;fingerprint:string;createdAt:number;usedBy?:string[]};
+export type AppState={hosts:Host[];runtimes:Record<string,Runtime>;keys?:KeyInfo[];portrait?:boolean};
+export type HistoryRow={t:number;used:number|null;mem:number|null};
+export type HistoryData={rows:HistoryRow[];devices:{uuid:string;name:string;index:number|null}[]};
+export type Verdict={status:Status;label:string;color:string;reason:string;available:boolean};
+export const colors:Record<Status,string>={idle:'#63dec1',available:'#65bde9',light:'#e8ca67',busy:'#ed8948',blocked:'#78909f',observing:'#859faf'};
+export const labels:Record<Status,string>={idle:'空闲',available:'可用',light:'轻量占用',busy:'占用',blocked:'不可用',observing:'观察中'};

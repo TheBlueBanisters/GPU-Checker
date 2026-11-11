@@ -134,14 +134,14 @@ class CardMotion:
         self.click_heat=max(0,self.click_heat-max(0,now-self.heat_stamp)*1.8)
         self.heat_stamp=now
 
-    def boost(self):
+    def boost(self,point=None):
         if self.state not in ('busy','light','available','idle','unknown') or self.burst is not None:return
         now=time.monotonic()
         self.cool(now)
         self.click_heat+=1
         if self.click_heat>=6:
             from click_burst import ClickBurst
-            self.burst=ClickBurst(self.widget)
+            self.burst=ClickBurst(self.widget,point)
             self.click_heat=0.
             self.burst.show();self.burst.raise_();self.burst.begin()
         self.sync()

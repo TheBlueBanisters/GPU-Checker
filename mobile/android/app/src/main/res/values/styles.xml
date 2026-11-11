@@ -1,0 +1,5 @@
+<resources>
+<style name="AppTheme" parent="Theme.AppCompat.NoActionBar"><item name="colorPrimary">#0e1d2e</item><item name="colorPrimaryDark">#080f1e</item><item name="colorAccent">#63dec1</item><item name="android:windowBackground">#080f1e</item><item name="android:statusBarColor">#080f1e</item><item name="android:navigationBarColor">#080f1e</item><item name="android:windowLightStatusBar">false</item><item name="android:windowLightNavigationBar">false</item></style>
+<style name="AppTheme.NoActionBar" parent="AppTheme"><item name="windowActionBar">false</item><item name="windowNoTitle">true</item></style>
+<style name="AppTheme.NoActionBarLaunch" parent="Theme.SplashScreen"><item name="windowSplashScreenBackground">#080f1e</item><item name="windowSplashScreenAnimatedIcon">@mipmap/ic_launcher</item><item name="postSplashScreenTheme">@style/AppTheme.NoActionBar</item></style>
+</resources>

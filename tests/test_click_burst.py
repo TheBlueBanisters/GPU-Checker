@@ -9,6 +9,56 @@ from availability import result
 from card_motion import spark_origin
 
 
+def test_burst_capture_and_reassembly_never_retain_click_waves(window,monkeypatch):
+    card=GPUCard(snapshot(1)['gpus'][0],availability=result('busy','test'))
+    card.setFixedSize(300,330);card.show();QApplication.processEvents()
+    captured=[];grab=card.grab
+    def capture(*args):
+        captured.append(tuple(card.ripples))
+        return grab(*args)
+    monkeypatch.setattr(card,'grab',capture)
+    try:
+        card.motion.timer.stop()
+        for _ in range(3):card.pulse_at(QPointF(60,80))
+        assert len(card.ripples)==3
+        card.motion.click_heat=5.9;card.motion.heat_stamp=time.monotonic()
+        card.pulse_at(QPointF(90,100))
+        burst=card.motion.burst;assert burst is not None
+        burst.animation.pause()
+        assert captured==[()]  # The stored recovery raster has no click feedback.
+        assert not card.ripples
+        assert card.click_animation.state()==card.click_animation.State.Stopped
+        for _ in range(8):card.pulse_at(QPointF(120,140))
+        assert not card.ripples and card.motion.click_heat==0
+        burst.advance(.95);burst.finish();QApplication.processEvents()
+        assert card.motion.burst is None and not card.ripples
+        card.pulse_at(QPointF(30,40))
+        assert len(card.ripples)==1  # Feedback works again for fresh clicks.
+    finally:card.close()
+
+
+def test_burst_origin_uses_final_child_click_in_card_coordinates(window):
+    card=GPUCard(snapshot(1)['gpus'][0],availability=result('busy','test'))
+    card.setFixedSize(300,330);card.show();QApplication.processEvents()
+    try:
+        card.motion.timer.stop()
+        # Earlier clicks are elsewhere; only the threshold-triggering click wins.
+        for _ in range(4):card.pulse_at(QPointF(220,240))
+        assert card.motion.burst is None
+        card.motion.click_heat=5.9;card.motion.heat_stamp=time.monotonic()
+        local=QPoint(13,7);expected=QPointF(card.name.mapTo(card,local))
+        QTest.mouseClick(card.name,Qt.MouseButton.LeftButton,pos=local)
+        burst=card.motion.burst;assert burst is not None
+        assert burst.origin==expected
+        burst.finish()
+        # Direct floating-point input is preserved rather than rounded to pixels.
+        card.motion.click_heat=5.9;card.motion.heat_stamp=time.monotonic()
+        point=QPointF(31.25,48.75);card.pulse_at(point)
+        assert card.motion.burst.origin==point
+        card.motion.burst.finish()
+    finally:card.close()
+
+
 def test_random_sparks_stay_inside_chassis(window):
     state=result('busy','last');state.update(visual='paused',historical=True)
     card=GPUCard(snapshot(1)['gpus'][0],availability=state)

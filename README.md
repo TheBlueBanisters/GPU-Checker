@@ -1,10 +1,13 @@
 # GPU Checker
 
-Windows 多主机 NVIDIA GPU 监控工具。通过 SSH 实时查看显卡、用卡进程、用户和工作目录，支持日夜主题与机甲风界面。
+Windows / Android 多主机 NVIDIA GPU 监控工具。通过 SSH 实时查看显卡、用卡进程、用户和工作目录，支持日夜主题与机甲风界面。
 
 ## 下载与使用
 
-到 [Releases](https://github.com/TheBlueBanisters/GPU-Checker/releases) 下载 Windows x64 ZIP，完整解压后运行 `GPUChecker.exe`，无需安装 Python。目录版需要保留同目录的 `_internal` 文件夹。
+到 [Releases](https://github.com/TheBlueBanisters/GPU-Checker/releases) 下载对应平台的安装包：
+
+- **Windows 10/11 x64**：ZIP 完整解压后运行 `GPUChecker.exe`，无需安装 Python；保留同目录的 `_internal` 文件夹。
+- **Android 8.0+**：下载并安装 APK。手机通过原生 SSH 直接连接服务器，无需电脑或额外后端；内网主机需同一网络或手机 VPN。固定竖屏，使用墨蓝背景图标。当前 APK 使用测试证书签名。
 
 **Windows 智能应用控制**：当前预发布测试版和旧版 EXE 均未签名，可能因“无法验证发布者”被拦截。仓库已加入正式发行签名检查，但目前尚无可信发布者证书，不能保证这些程序通过智能应用控制。SHA-256 校验不等于发布者签名。请参阅 [微软签名要求](https://learn.microsoft.com/en-us/windows/apps/develop/smart-app-control/code-signing-for-smart-app-control)。
 
@@ -12,7 +15,7 @@ Windows 多主机 NVIDIA GPU 监控工具。通过 SSH 实时查看显卡、用�
 2. 需要输入服务器密码的主机，按下方“密码登录与记住密码”设置；已配置免密的主机可使用 OpenSSH 或私钥。
 3. 左侧主机并行监控，点击切换视图；暂停状态会记住。
 
-## 密码登录与记住密码（常用）
+## Windows 密码登录与记住密码（常用）
 
 **没有配置 SSH 免密、平时需要手动输入服务器密码，也可以保存一次后自动连接。**
 
@@ -30,6 +33,16 @@ Windows 多主机 NVIDIA GPU 监控工具。通过 SSH 实时查看显卡、用�
 
 内置密码模式仅支持直连；含 `ProxyJump`／`ProxyCommand` 的跳板连接需使用 OpenSSH 模式，不能套用上述保存密码流程。
 
+## Android 密码登录与私钥
+
+1. 点「+」添加主机，或导入／粘贴 SSH config，核对地址、用户名和端口。
+2. 选择「密码登录」，点「安全配置认证」，在 Android 原生窗口输入服务器密码，勾选「记住认证」并保存；首次连接核对服务器指纹。
+3. 已启用的主机下次启动会使用保存的认证自动连接；主动暂停的主机保持暂停，点「恢复」再连接。
+
+密码与私钥口令由 Android Keystore 加密保存，不传给网页界面，不进入配置导出。私钥可在「设置 → SSH 私钥库」中导入，一次保存后供多台主机选择使用；电脑 SSH Agent 和电脑私钥路径不会自动迁移。卸载或清除应用数据会删除本机配置与凭据。
+
+手机端使用顶部横向主机卡片、纵向 GPU 条目和可折叠的单行进程列表；支持主机／逐卡历史曲线、触摸时间游标、缩放、冻结快照及日夜渐变。安装、构建与限制见 [Android 使用说明](mobile/README.md)。
+
 ## 主要功能
 
 - GPU 显示负载、显存、温度、功耗和趋势；进程可查看用户与目录。
@@ -37,9 +50,9 @@ Windows 多主机 NVIDIA GPU 监控工具。通过 SSH 实时查看显卡、用�
 - GPU／主机卡片右下角“历史”查看显存占用量与显存利用率曲线，鼠标虚线显示对应时间，支持时间缩放和平移；历史缓存可设上限，最多 1 GB，自动清理最老数据。
 - 离线保留最后快照；暂停时保留上次 GPU 状态标记，历史数据不计入当前可用数量。
 - 无 GPU 主机也能保持 SSH 连接。采集只读，不控制服务器进程。
-- 支持按窗口空间自适应调整卡片、字号和间距，兼容系统缩放与日夜渐变切换；连续点击 GPU 卡片可触发粉尘爆炸彩蛋，附带轻盈短音效，仅影响本地界面。
+- 支持按窗口空间自适应调整卡片、字号和间距，兼容系统缩放与日夜渐变切换；连续点击 GPU 卡片可触发粉尘爆炸彩蛋，仅影响本地界面；Windows 版附带轻盈短音效。
 
-客户端面向 Windows 10/11 x64（已验证 Windows 11）；远端需要 Linux、Python 3.6+，GPU 监控另需 NVIDIA 驱动与 `nvidia-smi`。
+Windows 已验证 Windows 11，Android 已验证 Android 11 模拟器；远端需要 Linux、Python 3.6+，GPU 监控另需 NVIDIA 驱动与 `nvidia-smi`。
 
 配置、迁移、连接限制及构建方法见 [使用说明](docs/USAGE.md)。默认配置位于 `%USERPROFILE%\.gpu-checker`，更新程序会保留原有主机和快照。发行包不包含个人配置或凭据。
 
@@ -54,3 +67,5 @@ Windows 多主机 NVIDIA GPU 监控工具。通过 SSH 实时查看显卡、用�
 正式构建需要当前 Windows 用户证书库中的可信代码签名证书（通过 `GPUCHECKER_SIGNING_THUMBPRINT` 指定）及 Windows SDK SignTool；EXE、DLL、PYD 验签通过后，成品才会写入 `delivery/releases/`。证书与时间戳流程尚待有真实发布证书后验证。
 
 仅用于本地测试、没有证书时运行 `./build.ps1 -DevelopmentUnsigned`，产物位于 `delivery/development/`，文件名标有 `UNSIGNED-DEVELOPMENT`，仍可能被智能应用控制拦截。构建不会更改 Windows 安全设置。第三方声明及许可证见 [THIRD_PARTY_NOTICES](delivery/THIRD_PARTY_NOTICES.md)。
+
+Android 源码位于 `mobile/`，采用 React + TypeScript + Vite + Capacitor 和 Kotlin 原生 SSH 插件；浏览器预览与 APK 构建命令见其 [README](mobile/README.md)。
